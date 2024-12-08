@@ -10,6 +10,7 @@
 #define HASH_TABLE_SIZE 4096
 #define HASH_TABLE_ASSOC 1
 #define MAX_N_MODEL_ARGS 16
+#define MAX_N_MAPS_PER_MODEL 16
 
 struct key_scratch_info_t {
 	const char* id;
@@ -58,6 +59,9 @@ struct map_t {
 	const char* id;
 	int scratch_offs;
 	struct hash_map_t map;
+	key_type_t* past_keys;
+	int past_p;
+	int n_past_keys;
 };
 static struct map_t maps[MAX_N_MAPS];
 
@@ -87,7 +91,7 @@ void fstore_init() {
 void fstore_exit() {
 }
 
-bool fstore_register_map(const char* id, const char* key_id, int scratch_offs, unsigned scratch_sz, map_ptr_t* map) {
+bool fstore_register_map(const char* id, const char* key_id, int scratch_offs, unsigned scratch_sz, map_ptr_t* map, int n_past_track) {
 	int map_i = 0;
 	while (map_i < MAX_N_MAPS && maps[map_i].id != NULL) {
 		map_i += 1;
@@ -119,6 +123,9 @@ bool fstore_register_map(const char* id, const char* key_id, int scratch_offs, u
 		maps[map_i].scratch_offs = -1;
 		hash_map__init(&maps[map_i].map, HASH_TABLE_SIZE);
 	}
+	maps[map_i].past_keys = malloc(sizeof(key_type_t) * n_past_track);
+	maps[map_i].past_p = 0;
+	maps[map_i].n_past_keys = n_past_track;
 	*map = (map_ptr_t) &maps[map_i];
 	return true;
 }
@@ -129,6 +136,9 @@ bool fstore_register_model_fn(int n_maps, int n_past, const char** ids, model_fn
 		i += 1;
 	}
 	if (i >= MAX_N_MODELS) {
+		return false;
+	}
+	if (n_maps > MAX_N_MAPS_PER_MODEL) {
 		return false;
 	}
 
@@ -157,6 +167,7 @@ bool fstore_register_model_fn(int n_maps, int n_past, const char** ids, model_fn
 
 bool fstore_insert(map_ptr_t p, key_type_t k, val_type_t v) {
 	struct map_t* map = (struct map_t*) p;
+	map->past_keys[map->past_p++ % map->n_past_keys] = k;
 	if (map->scratch_offs >= 0) {
 		char* p = ((char*) k) + map->scratch_offs;
 		*((val_type_t*) p) = v;
@@ -166,30 +177,51 @@ bool fstore_insert(map_ptr_t p, key_type_t k, val_type_t v) {
 	}
 }
 
-bool fstore_model(model_id_t id, int n_advance, int n_past, key_type_t** keys, void** vals) {
+bool fstore_advance(model_id_t id, key_type_t* keys, int lookup_dim) {
 	val_type_t args[MAX_N_MODEL_ARGS];
 	struct model_t* m = &models[id];
 
+	key_type_t map_keys_buf[MAX_N_MAPS_PER_MODEL];
+	key_type_t* map_keys;
+	if (keys == NULL) {
+		if (lookup_dim == -1) {
+			for (int j = 0; j<m->n_maps; ++j) {
+				struct map_t* map = m->maps[j];
+				key_type_t k = map->past_keys[map->past_p];
+				map_keys_buf[j] = k;
+			}
+		} else {
+			struct map_t* map = m->maps[lookup_dim];
+			key_type_t k = map->past_keys[map->past_p];
+			for (int j = 0; j<m->n_maps; ++j) {
+				map_keys_buf[j] = k;
+			}
+		}
+		map_keys = &map_keys_buf[0];
+	} else {
+		map_keys = keys;
+	}
+	for (int j = 0; j<m->n_maps; ++j) {
+		struct map_t* map = m->maps[j];
+		val_type_t v;
+		if (map->scratch_offs >= 0) {
+			char* p = ((char*) map_keys[j]) + map->scratch_offs;
+			v = *((val_type_t*) p);
+		} else {
+			if (!hash_map__lookup(&map->map, map_keys[j], &v)) {
+				return false;
+			}
+		}
+		args[j] = v;
+	}
+	m->fn(&args[0], &m->past_results[m->n_bytes_ret * (m->past_p++ % m->n_past)]);
+}
+
+bool fstore_model(model_id_t id, int n_past, void** vals) {
+	val_type_t args[MAX_N_MODEL_ARGS];
+	struct model_t* m = &models[id];
 	if (n_past > m->n_past) {
 		return false;
-	}
-
-	for (int i = 0; i<n_advance; ++i) {
-		key_type_t* map_keys = keys[i];
-		for (int j = 0; j<m->n_maps; ++j) {
-			struct map_t* map = m->maps[j];
-			val_type_t v;
-			if (map->scratch_offs >= 0) {
-				char* p = ((char*) map_keys[j]) + map->scratch_offs;
-				v = *((val_type_t*) p);
-			} else {
-				if (!hash_map__lookup(&map->map, map_keys[j], &v)) {
-					return false;
-				}
-			}
-			args[j] = v;
-		}
-		m->fn(&args[0], &m->past_results[m->n_bytes_ret * (m->past_p++ % m->n_past)]);
 	}
 
 	for (int i = 0; i<n_past; ++i) {

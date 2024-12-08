@@ -106,9 +106,9 @@ int main() {
 	bio_pq__init(pq, cmp_bio_finish_times);
 
 	map_ptr_t start_map;
-	fstore_register_map("bio__start_time", "bio", offsetof(struct bio, scratch), member_sz(struct bio, scratch), &start_map);
+	fstore_register_map("bio__start_time", "bio", offsetof(struct bio, scratch), member_sz(struct bio, scratch), &start_map, 4);
 	map_ptr_t end_map;
-	fstore_register_map("bio__end_time", "bio", offsetof(struct bio, scratch), member_sz(struct bio, scratch), &end_map);
+	fstore_register_map("bio__end_time", "bio", offsetof(struct bio, scratch), member_sz(struct bio, scratch), &end_map, 4);
 	const char* ids[2] = {"bio__start_time", "bio__end_time"};
 	model_id_t model_id;
 	fstore_register_model_fn(2, 4, &ids[0], latency_fn, sizeof(uint64_t), &model_id);
@@ -122,7 +122,7 @@ int main() {
 			
 			uint64_t keys[2] = {(uint64_t) top, (uint64_t) top};
 			uint64_t* keys_ptr = &keys[0];
-			fstore_model(model_id, 1, 0, &keys_ptr, NULL);
+			fstore_advance(model_id, NULL, 1);
 		}
 		if (t % 4 == 0) {
 			struct bio* b = malloc(sizeof(struct bio));
@@ -136,7 +136,7 @@ int main() {
 
 			char fill[sizeof(uint64_t) * 4];
 			void* arr[4] = {&fill[0], &fill[sizeof(uint64_t)], &fill[2 * sizeof(uint64_t)], &fill[3 * sizeof(uint64_t)]};
-			fstore_model(model_id, 0, 4, NULL, &arr[0]);
+			fstore_model(model_id, 4, &arr[0]);
 		}
 	}
 
