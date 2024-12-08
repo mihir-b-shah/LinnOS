@@ -17,7 +17,7 @@ struct bio {
 	int size;
 	int finish_time;
 
-	char scratch[8];
+	char scratch[16];
 };
 
 static bool cmp_bio_finish_times(struct bio* b1, struct bio* b2) {
@@ -117,11 +117,11 @@ int main() {
 		struct bio* top;
 		if (bio_pq__top(pq, &top) && top->finish_time <= t) {
 			bio_pq__pop(pq);
-
 			fstore_insert(end_map, (uint64_t) top, (uint64_t) top->finish_time);
 			
 			uint64_t keys[2] = {(uint64_t) top, (uint64_t) top};
 			uint64_t* keys_ptr = &keys[0];
+
 			fstore_advance(model_id, NULL, 1);
 		}
 		if (t % 4 == 0) {

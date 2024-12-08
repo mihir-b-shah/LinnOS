@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <stdio.h>
+
 #include "fstore.h"
 
 #define MAX_N_MAPS 256
@@ -192,7 +194,7 @@ bool fstore_advance(model_id_t id, key_type_t* keys, int lookup_dim) {
 			}
 		} else {
 			struct map_t* map = m->maps[lookup_dim];
-			key_type_t k = map->past_keys[map->past_p];
+			key_type_t k = map->past_keys[(map->past_p + (map->n_past_keys - 1)) % map->n_past_keys];
 			for (int j = 0; j<m->n_maps; ++j) {
 				map_keys_buf[j] = k;
 			}
