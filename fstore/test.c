@@ -108,6 +108,7 @@ int main() {
 	map_ptr_t start_map;
 	fstore_register_map("bio__start_time", "bio", offsetof(struct bio, scratch), member_sz(struct bio, scratch), &start_map, 4);
 	map_ptr_t end_map;
+
 	fstore_register_map("bio__end_time", "bio", offsetof(struct bio, scratch), member_sz(struct bio, scratch), &end_map, 4);
 	const char* ids[2] = {"bio__start_time", "bio__end_time"};
 	combiner_id_t combiner_id;

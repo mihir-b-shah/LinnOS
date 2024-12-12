@@ -3,6 +3,8 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <assert.h>
+#include <pthread.h>
 
 #include "fstore.h"
 
@@ -23,6 +25,7 @@ static struct key_scratch_info_t key_infos[MAX_N_KEYS];
 
 struct kv_t {
 	int p;
+	pthread_spinlock_t lock;
 	bool valid[HASH_TABLE_ASSOC];
 	key_type_t k[HASH_TABLE_ASSOC];
 	val_type_t v[HASH_TABLE_ASSOC];
@@ -37,55 +40,70 @@ static void hash_map__init(struct hash_map_t* map, int sz) {
 	map->table = malloc(sizeof(struct kv_t) * sz);
 	for (int i = 0; i<sz; ++i) {
 		map->table[i].p = 0;
+		pthread_spin_init(&map->table[i].lock, 0);
 	}
 }
 static bool hash_map__insert(struct hash_map_t* map, key_type_t k, val_type_t v) {
 	struct kv_t* kv = &map->table[hash(k)];
+	pthread_spin_lock(&kv->lock);
 	int pos = kv->p++ % HASH_TABLE_ASSOC;
 	kv->k[pos] = k;
 	kv->v[pos] = v;
+	pthread_spin_unlock(&kv->lock);
 	return true;
 }
 static bool hash_map__lookup(struct hash_map_t* map, key_type_t k, val_type_t* v) {
 	struct kv_t* kv = &map->table[hash(k)];
+	pthread_spin_lock(&kv->lock);
 	for (int i = 0; i<HASH_TABLE_ASSOC; ++i) {
 		if (kv->k[i] == k) {
 			*v = kv->v[i];
 			return true;
 		}
 	}
+	pthread_spin_unlock(&kv->lock);
 	return false;
 }
 
+struct circ_buf_entry_t {
+	bool valid;
+};
 struct circ_buf_t {
 	int sz;
 	int el_size;
 	int p;
+	pthread_spinlock_t lock;
+	struct circ_buf_entry_t* entries;
 	char* buf;
-	bool* valid;
+	
 };
+static bool is_pow_2(int x) {
+	return (x & (x - 1)) == 0;
+}
 static void circ_buf__init(struct circ_buf_t* cbuf, int sz, int el_size) {
+	assert(is_pow_2(sz));
 	cbuf->sz = sz;
 	cbuf->el_size = el_size;
 	cbuf->p = 0;
+	pthread_spin_init(&cbuf->lock, 0);
+	cbuf->entries = malloc(sz * sizeof(struct circ_buf_entry_t));
 	cbuf->buf = malloc(sz * el_size);
-	cbuf->valid = malloc(sz);
 	for (int i = 0; i<sz; ++i) {
-		cbuf->valid[i] = false;
+		cbuf->entries[i].valid = false;
 	}
 }
 static char* circ_buf__alloc(struct circ_buf_t* cbuf) {
+	pthread_spin_lock(&cbuf->lock);
 	int idx = cbuf->p++ % cbuf->sz;
-	cbuf->valid[idx] = true;
+	cbuf->entries[idx].valid = true;
 	return &cbuf->buf[cbuf->el_size * idx];
 }
-static void circ_buf__append(struct circ_buf_t* cbuf, void* v) {
-	char* p = circ_buf__alloc(cbuf);
-	memcpy(p, v, cbuf->el_size);
+static void circ_buf__mark_visible(struct circ_buf_t* cbuf) {
+	pthread_spin_unlock(&cbuf->lock);
 }
 static bool circ_buf__get(struct circ_buf_t* cbuf, int i, void* fill) {
 	int idx = (cbuf->p + (cbuf->sz - 1 - i)) % cbuf->sz;
-	if (!cbuf->valid[idx]) {
+	if (!cbuf->entries[idx].valid) {
 		return false;
 	}
 	memcpy(fill, &cbuf->buf[cbuf->el_size * idx], cbuf->el_size);
@@ -106,7 +124,8 @@ struct combiner_t {
 	struct map_t** maps;
 	struct circ_buf_t past_results;
 };
-struct combiner_t combiners[MAX_N_COMBINERS];
+static struct combiner_t combiners[MAX_N_COMBINERS];
+static pthread_mutex_t init_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 void fstore_init() {
 	for (int i = 0; i<MAX_N_MAPS; ++i) {
@@ -124,11 +143,14 @@ void fstore_exit() {
 }
 
 bool fstore_register_map(const char* id, const char* key_id, int scratch_offs, unsigned scratch_sz, map_ptr_t* map, int n_past_track) {
+	pthread_mutex_lock(&init_mutex);
+
 	int map_i = 0;
 	while (map_i < MAX_N_MAPS && maps[map_i].id != NULL) {
 		map_i += 1;
 	}
 	if (map_i >= MAX_N_MAPS) {
+		pthread_mutex_unlock(&init_mutex);
 		return false;
 	}
 
@@ -137,6 +159,7 @@ bool fstore_register_map(const char* id, const char* key_id, int scratch_offs, u
 		key_i += 1;
 	}
 	if (key_i >= MAX_N_KEYS) {
+		pthread_mutex_unlock(&init_mutex);
 		return false;
 	}
 
@@ -155,20 +178,26 @@ bool fstore_register_map(const char* id, const char* key_id, int scratch_offs, u
 		maps[map_i].scratch_offs = -1;
 		hash_map__init(&maps[map_i].map, HASH_TABLE_SIZE);
 	}
+
 	circ_buf__init(&maps[map_i].past_keys, n_past_track, sizeof(key_type_t));
 	*map = (map_ptr_t) &maps[map_i];
+
+	pthread_mutex_unlock(&init_mutex);
 	return true;
 }
 
 bool fstore_register_combiner_fn(int n_maps, int n_past, const char** ids, combiner_fn_t fn, int n_bytes_ret, combiner_id_t* id) {
+	pthread_mutex_lock(&init_mutex);
 	int i = 0;
 	while (i < MAX_N_COMBINERS && combiners[i].maps != NULL) {
 		i += 1;
 	}
 	if (i >= MAX_N_COMBINERS) {
+		pthread_mutex_unlock(&init_mutex);
 		return false;
 	}
 	if (n_maps > MAX_N_MAPS_PER_COMBINER) {
+		pthread_mutex_unlock(&init_mutex);
 		return false;
 	}
 
@@ -189,19 +218,27 @@ bool fstore_register_combiner_fn(int n_maps, int n_past, const char** ids, combi
 	}
 
 	*id = i;
+	pthread_mutex_unlock(&init_mutex);
 	return true;
 }
 
-bool fstore_insert(map_ptr_t p, key_type_t k, val_type_t v) {
-	struct map_t* map = (struct map_t*) p;
-	circ_buf__append(&map->past_keys, &k);
+bool fstore_insert(map_ptr_t map_p, key_type_t k, val_type_t v) {
+	struct map_t* map = (struct map_t*) map_p;
+	bool ret;
+
 	if (map->scratch_offs >= 0) {
-		char* p = ((char*) k) + map->scratch_offs;
-		*((val_type_t*) p) = v;
-		return true;
+		char* scratch_p = ((char*) k) + map->scratch_offs;
+		*((val_type_t*) scratch_p) = v;
+		ret = true;
 	} else {
-		return hash_map__insert(&map->map, k, v);
+		ret = hash_map__insert(&map->map, k, v);
 	}
+
+	char* p = circ_buf__alloc(&map->past_keys);
+	memcpy(p, &k, sizeof(key_type_t));
+	circ_buf__mark_visible(&map->past_keys);
+
+	return ret;
 }
 
 bool fstore_combine(combiner_id_t id, key_type_t* keys, int lookup_dim) {
@@ -214,11 +251,9 @@ bool fstore_combine(combiner_id_t id, key_type_t* keys, int lookup_dim) {
 		if (lookup_dim == -1) {
 			for (int j = 0; j<m->n_maps; ++j) {
 				struct map_t* map = m->maps[j];
-				key_type_t k;
-				if (!circ_buf__get(&map->past_keys, 0, &k)) {
+				if (!circ_buf__get(&map->past_keys, 0, &map_keys_buf[j])) {
 					return false;
 				}
-				map_keys_buf[j] = k;
 			}
 		} else {
 			struct map_t* map = m->maps[lookup_dim];
@@ -248,6 +283,7 @@ bool fstore_combine(combiner_id_t id, key_type_t* keys, int lookup_dim) {
 		args[j] = v;
 	}
 	m->fn(&args[0], circ_buf__alloc(&m->past_results));
+	circ_buf__mark_visible(&m->past_results);
 	return true;
 }
 
@@ -258,7 +294,7 @@ bool fstore_query_past(combiner_id_t id, int n_past, void** vals) {
 		return false;
 	}
 
-	for (int i = 0; i<n_past; ++i) {
+	for (int i = n_past-1; i>=0; --i) {
 		char* p = (char*) vals[i];
 		if (!circ_buf__get(&m->past_results, i, p)) {
 			return false;
