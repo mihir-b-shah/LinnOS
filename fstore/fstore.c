@@ -8,11 +8,11 @@
 
 #define MAX_N_MAPS 256
 #define MAX_N_KEYS 256
-#define MAX_N_MODELS 256
+#define MAX_N_COMBINERS 256
 #define HASH_TABLE_SIZE 4096
 #define HASH_TABLE_ASSOC 1
-#define MAX_N_MODEL_ARGS 16
-#define MAX_N_MAPS_PER_MODEL 16
+#define MAX_N_COMBINER_ARGS 16
+#define MAX_N_MAPS_PER_COMBINER 16
 
 struct key_scratch_info_t {
 	const char* id;
@@ -24,13 +24,13 @@ static struct key_scratch_info_t key_infos[MAX_N_KEYS];
 struct kv_t {
 	int p;
 	bool valid[HASH_TABLE_ASSOC];
-	uint64_t k[HASH_TABLE_ASSOC];
-	uint64_t v[HASH_TABLE_ASSOC];
+	key_type_t k[HASH_TABLE_ASSOC];
+	val_type_t v[HASH_TABLE_ASSOC];
 };
 struct hash_map_t {
 	struct kv_t* table;
 };
-static uint64_t hash(uint64_t x) {
+static uint64_t hash(key_type_t x) {
 	return x;
 }
 static void hash_map__init(struct hash_map_t* map, int sz) {
@@ -39,14 +39,14 @@ static void hash_map__init(struct hash_map_t* map, int sz) {
 		map->table[i].p = 0;
 	}
 }
-static bool hash_map__insert(struct hash_map_t* map, uint64_t k, uint64_t v) {
+static bool hash_map__insert(struct hash_map_t* map, key_type_t k, val_type_t v) {
 	struct kv_t* kv = &map->table[hash(k)];
 	int pos = kv->p++ % HASH_TABLE_ASSOC;
 	kv->k[pos] = k;
 	kv->v[pos] = v;
 	return true;
 }
-static bool hash_map__lookup(struct hash_map_t* map, uint64_t k, uint64_t* v) {
+static bool hash_map__lookup(struct hash_map_t* map, key_type_t k, val_type_t* v) {
 	struct kv_t* kv = &map->table[hash(k)];
 	for (int i = 0; i<HASH_TABLE_ASSOC; ++i) {
 		if (kv->k[i] == k) {
@@ -100,20 +100,20 @@ struct map_t {
 };
 static struct map_t maps[MAX_N_MAPS];
 
-struct model_t {
-	model_fn_t fn;
+struct combiner_t {
+	combiner_fn_t fn;
 	int n_maps;
 	struct map_t** maps;
 	struct circ_buf_t past_results;
 };
-struct model_t models[MAX_N_MODELS];
+struct combiner_t combiners[MAX_N_COMBINERS];
 
 void fstore_init() {
 	for (int i = 0; i<MAX_N_MAPS; ++i) {
 		maps[i].id = NULL;
 	}
-	for (int i = 0; i<MAX_N_MODELS; ++i) {
-		models[i].maps = NULL;
+	for (int i = 0; i<MAX_N_COMBINERS; ++i) {
+		combiners[i].maps = NULL;
 	}
 	for (int i = 0; i<MAX_N_KEYS; ++i) {
 		key_infos[i].id = NULL;
@@ -160,24 +160,24 @@ bool fstore_register_map(const char* id, const char* key_id, int scratch_offs, u
 	return true;
 }
 
-bool fstore_register_model_fn(int n_maps, int n_past, const char** ids, model_fn_t fn, int n_bytes_ret, model_id_t* id) {
+bool fstore_register_combiner_fn(int n_maps, int n_past, const char** ids, combiner_fn_t fn, int n_bytes_ret, combiner_id_t* id) {
 	int i = 0;
-	while (i < MAX_N_MODELS && models[i].maps != NULL) {
+	while (i < MAX_N_COMBINERS && combiners[i].maps != NULL) {
 		i += 1;
 	}
-	if (i >= MAX_N_MODELS) {
+	if (i >= MAX_N_COMBINERS) {
 		return false;
 	}
-	if (n_maps > MAX_N_MAPS_PER_MODEL) {
+	if (n_maps > MAX_N_MAPS_PER_COMBINER) {
 		return false;
 	}
 
-	models[i].n_maps = n_maps;
-	models[i].fn = fn;
-	circ_buf__init(&models[i].past_results, n_past, n_bytes_ret);
+	combiners[i].n_maps = n_maps;
+	combiners[i].fn = fn;
+	circ_buf__init(&combiners[i].past_results, n_past, n_bytes_ret);
 
 	struct map_t** p_maps = malloc(sizeof(struct map_t*) * n_maps);
-	models[i].maps = p_maps;
+	combiners[i].maps = p_maps;
 
 	for (int j = 0; j<n_maps; ++j) {
 		for (int i = 0; i<MAX_N_MAPS; ++i) {
@@ -204,11 +204,11 @@ bool fstore_insert(map_ptr_t p, key_type_t k, val_type_t v) {
 	}
 }
 
-bool fstore_advance(model_id_t id, key_type_t* keys, int lookup_dim) {
-	val_type_t args[MAX_N_MODEL_ARGS];
-	struct model_t* m = &models[id];
+bool fstore_combine(combiner_id_t id, key_type_t* keys, int lookup_dim) {
+	val_type_t args[MAX_N_COMBINER_ARGS];
+	struct combiner_t* m = &combiners[id];
 
-	key_type_t map_keys_buf[MAX_N_MAPS_PER_MODEL];
+	key_type_t map_keys_buf[MAX_N_MAPS_PER_COMBINER];
 	key_type_t* map_keys;
 	if (keys == NULL) {
 		if (lookup_dim == -1) {
@@ -251,9 +251,9 @@ bool fstore_advance(model_id_t id, key_type_t* keys, int lookup_dim) {
 	return true;
 }
 
-bool fstore_model(model_id_t id, int n_past, void** vals) {
-	val_type_t args[MAX_N_MODEL_ARGS];
-	struct model_t* m = &models[id];
+bool fstore_query_past(combiner_id_t id, int n_past, void** vals) {
+	val_type_t args[MAX_N_COMBINER_ARGS];
+	struct combiner_t* m = &combiners[id];
 	if (n_past > m->past_results.sz) {
 		return false;
 	}

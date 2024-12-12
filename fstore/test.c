@@ -110,8 +110,8 @@ int main() {
 	map_ptr_t end_map;
 	fstore_register_map("bio__end_time", "bio", offsetof(struct bio, scratch), member_sz(struct bio, scratch), &end_map, 4);
 	const char* ids[2] = {"bio__start_time", "bio__end_time"};
-	model_id_t model_id;
-	fstore_register_model_fn(2, 4, &ids[0], latency_fn, sizeof(uint64_t), &model_id);
+	combiner_id_t combiner_id;
+	fstore_register_combiner_fn(2, 4, &ids[0], latency_fn, sizeof(uint64_t), &combiner_id);
 
 	for (int t = 0; t < 1000; ++t) {
 		struct bio* top;
@@ -122,12 +122,12 @@ int main() {
 			uint64_t keys[2] = {(uint64_t) top, (uint64_t) top};
 			uint64_t* keys_ptr = &keys[0];
 
-			fstore_advance(model_id, NULL, 1);
+			fstore_combine(combiner_id, NULL, 1);
 		}
 		if (t % 4 == 0) {
 			char fill[sizeof(uint64_t) * 4];
 			void* arr[4] = {&fill[0], &fill[sizeof(uint64_t)], &fill[2 * sizeof(uint64_t)], &fill[3 * sizeof(uint64_t)]};
-			bool r = fstore_model(model_id, 4, &arr[0]);
+			bool r = fstore_query_past(combiner_id, 4, &arr[0]);
 			if (r) {
 				printf("t: %d v: %d | past_latency: %d %d %d %d\n", t, r, (int) *((uint64_t*) arr[0]), (int) *((uint64_t*) arr[1]), (int) *((uint64_t*) arr[2]), (int) *((uint64_t*) arr[3]));
 			}
