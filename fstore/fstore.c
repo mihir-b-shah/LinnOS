@@ -57,24 +57,54 @@ static bool hash_map__lookup(struct hash_map_t* map, uint64_t k, uint64_t* v) {
 	return false;
 }
 
+struct circ_buf_t {
+	int sz;
+	int el_size;
+	int p;
+	char* buf;
+	bool* valid;
+};
+static void circ_buf__init(struct circ_buf_t* cbuf, int sz, int el_size) {
+	cbuf->sz = sz;
+	cbuf->el_size = el_size;
+	cbuf->p = 0;
+	cbuf->buf = malloc(sz * el_size);
+	cbuf->valid = malloc(sz);
+	for (int i = 0; i<sz; ++i) {
+		cbuf->valid[i] = false;
+	}
+}
+static char* circ_buf__alloc(struct circ_buf_t* cbuf) {
+	int idx = cbuf->p++ % cbuf->sz;
+	cbuf->valid[idx] = true;
+	return &cbuf->buf[cbuf->el_size * idx];
+}
+static void circ_buf__append(struct circ_buf_t* cbuf, void* v) {
+	char* p = circ_buf__alloc(cbuf);
+	memcpy(p, v, cbuf->el_size);
+}
+static bool circ_buf__get(struct circ_buf_t* cbuf, int i, void* fill) {
+	int idx = (cbuf->p + (cbuf->sz - 1 - i)) % cbuf->sz;
+	if (!cbuf->valid[idx]) {
+		return false;
+	}
+	memcpy(fill, &cbuf->buf[cbuf->el_size * idx], cbuf->el_size);
+	return true;
+}
+
 struct map_t {
 	const char* id;
 	int scratch_offs;
 	struct hash_map_t map;
-	key_type_t* past_keys;
-	int past_p;
-	int n_past_keys;
+	struct circ_buf_t past_keys;
 };
 static struct map_t maps[MAX_N_MAPS];
 
 struct model_t {
 	model_fn_t fn;
 	int n_maps;
-	int n_past;
-	int n_bytes_ret;
 	struct map_t** maps;
-	char* past_results;
-	int past_p;
+	struct circ_buf_t past_results;
 };
 struct model_t models[MAX_N_MODELS];
 
@@ -125,9 +155,7 @@ bool fstore_register_map(const char* id, const char* key_id, int scratch_offs, u
 		maps[map_i].scratch_offs = -1;
 		hash_map__init(&maps[map_i].map, HASH_TABLE_SIZE);
 	}
-	maps[map_i].past_keys = malloc(sizeof(key_type_t) * n_past_track);
-	maps[map_i].past_p = 0;
-	maps[map_i].n_past_keys = n_past_track;
+	circ_buf__init(&maps[map_i].past_keys, n_past_track, sizeof(key_type_t));
 	*map = (map_ptr_t) &maps[map_i];
 	return true;
 }
@@ -146,10 +174,7 @@ bool fstore_register_model_fn(int n_maps, int n_past, const char** ids, model_fn
 
 	models[i].n_maps = n_maps;
 	models[i].fn = fn;
-	models[i].n_bytes_ret = n_bytes_ret;
-	models[i].n_past = n_past;
-	models[i].past_results = malloc(n_past * n_bytes_ret);
-	models[i].past_p = 0;
+	circ_buf__init(&models[i].past_results, n_past, n_bytes_ret);
 
 	struct map_t** p_maps = malloc(sizeof(struct map_t*) * n_maps);
 	models[i].maps = p_maps;
@@ -169,7 +194,7 @@ bool fstore_register_model_fn(int n_maps, int n_past, const char** ids, model_fn
 
 bool fstore_insert(map_ptr_t p, key_type_t k, val_type_t v) {
 	struct map_t* map = (struct map_t*) p;
-	map->past_keys[map->past_p++ % map->n_past_keys] = k;
+	circ_buf__append(&map->past_keys, &k);
 	if (map->scratch_offs >= 0) {
 		char* p = ((char*) k) + map->scratch_offs;
 		*((val_type_t*) p) = v;
@@ -189,12 +214,18 @@ bool fstore_advance(model_id_t id, key_type_t* keys, int lookup_dim) {
 		if (lookup_dim == -1) {
 			for (int j = 0; j<m->n_maps; ++j) {
 				struct map_t* map = m->maps[j];
-				key_type_t k = map->past_keys[map->past_p];
+				key_type_t k;
+				if (!circ_buf__get(&map->past_keys, 0, &k)) {
+					return false;
+				}
 				map_keys_buf[j] = k;
 			}
 		} else {
 			struct map_t* map = m->maps[lookup_dim];
-			key_type_t k = map->past_keys[(map->past_p + (map->n_past_keys - 1)) % map->n_past_keys];
+			key_type_t k;
+			if (!circ_buf__get(&map->past_keys, 0, &k)) {
+				return false;
+			}
 			for (int j = 0; j<m->n_maps; ++j) {
 				map_keys_buf[j] = k;
 			}
@@ -216,19 +247,22 @@ bool fstore_advance(model_id_t id, key_type_t* keys, int lookup_dim) {
 		}
 		args[j] = v;
 	}
-	m->fn(&args[0], &m->past_results[m->n_bytes_ret * (m->past_p++ % m->n_past)]);
+	m->fn(&args[0], circ_buf__alloc(&m->past_results));
+	return true;
 }
 
 bool fstore_model(model_id_t id, int n_past, void** vals) {
 	val_type_t args[MAX_N_MODEL_ARGS];
 	struct model_t* m = &models[id];
-	if (n_past > m->n_past) {
+	if (n_past > m->past_results.sz) {
 		return false;
 	}
 
 	for (int i = 0; i<n_past; ++i) {
 		char* p = (char*) vals[i];
-		memcpy(p, &m->past_results[m->n_bytes_ret * (m->past_p + (m->n_past - 1)  - i)], m->n_bytes_ret);
+		if (!circ_buf__get(&m->past_results, i, p)) {
+			return false;
+		}
 	}
 	return true;
 }

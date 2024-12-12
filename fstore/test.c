@@ -125,6 +125,13 @@ int main() {
 			fstore_advance(model_id, NULL, 1);
 		}
 		if (t % 4 == 0) {
+			char fill[sizeof(uint64_t) * 4];
+			void* arr[4] = {&fill[0], &fill[sizeof(uint64_t)], &fill[2 * sizeof(uint64_t)], &fill[3 * sizeof(uint64_t)]};
+			bool r = fstore_model(model_id, 4, &arr[0]);
+			if (r) {
+				printf("t: %d v: %d | past_latency: %d %d %d %d\n", t, r, (int) *((uint64_t*) arr[0]), (int) *((uint64_t*) arr[1]), (int) *((uint64_t*) arr[2]), (int) *((uint64_t*) arr[3]));
+			}
+
 			struct bio* b = malloc(sizeof(struct bio));
 			b->bdev = 1;
 			b->offset = rand() % 1048576;
@@ -133,10 +140,6 @@ int main() {
 			bio_pq__push(pq, b);
 			
 			fstore_insert(start_map, (uint64_t) b, (uint64_t) t);
-
-			char fill[sizeof(uint64_t) * 4];
-			void* arr[4] = {&fill[0], &fill[sizeof(uint64_t)], &fill[2 * sizeof(uint64_t)], &fill[3 * sizeof(uint64_t)]};
-			fstore_model(model_id, 4, &arr[0]);
 		}
 	}
 
