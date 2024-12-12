@@ -31,12 +31,14 @@ struct kv_t {
 	val_type_t v[HASH_TABLE_ASSOC];
 };
 struct hash_map_t {
+	int capacity;
 	struct kv_t* table;
 };
 static uint64_t hash(key_type_t x) {
 	return x;
 }
 static void hash_map__init(struct hash_map_t* map, int sz) {
+	map->capacity = sz;
 	map->table = malloc(sizeof(struct kv_t) * sz);
 	for (int i = 0; i<sz; ++i) {
 		map->table[i].p = 0;
@@ -63,6 +65,12 @@ static bool hash_map__lookup(struct hash_map_t* map, key_type_t k, val_type_t* v
 	}
 	pthread_spin_unlock(&kv->lock);
 	return false;
+}
+static void hash_map__free(struct hash_map_t* map) {
+	free(map->table);
+	for (int i = 0; i<map->capacity; ++i) {
+		pthread_spin_destroy(&map->table[i].lock);
+	}
 }
 
 struct circ_buf_entry_t {
@@ -102,12 +110,20 @@ static void circ_buf__mark_visible(struct circ_buf_t* cbuf) {
 	pthread_spin_unlock(&cbuf->lock);
 }
 static bool circ_buf__get(struct circ_buf_t* cbuf, int i, void* fill) {
+	pthread_spin_lock(&cbuf->lock);
 	int idx = (cbuf->p + (cbuf->sz - 1 - i)) % cbuf->sz;
 	if (!cbuf->entries[idx].valid) {
+		pthread_spin_unlock(&cbuf->lock);
 		return false;
 	}
 	memcpy(fill, &cbuf->buf[cbuf->el_size * idx], cbuf->el_size);
+	pthread_spin_unlock(&cbuf->lock);
 	return true;
+}
+static void circ_buf__free(struct circ_buf_t* cbuf) {
+	free(cbuf->entries);
+	free(cbuf->buf);
+	pthread_spin_destroy(&cbuf->lock);
 }
 
 struct map_t {
@@ -125,9 +141,10 @@ struct combiner_t {
 	struct circ_buf_t past_results;
 };
 static struct combiner_t combiners[MAX_N_COMBINERS];
-static pthread_mutex_t init_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t init_mutex;
 
 void fstore_init() {
+	pthread_mutex_init(&init_mutex, NULL);
 	for (int i = 0; i<MAX_N_MAPS; ++i) {
 		maps[i].id = NULL;
 	}
@@ -140,6 +157,22 @@ void fstore_init() {
 }
 
 void fstore_exit() {
+	for (int i = 0; i<MAX_N_MAPS; ++i) {
+		if (maps[i].id != NULL) {
+			hash_map__free(&maps[i].map);
+			circ_buf__free(&maps[i].past_keys);
+		}
+	}
+	for (int i = 0; i<MAX_N_COMBINERS; ++i) {
+		if (combiners[i].maps != NULL) {
+			free(combiners[i].maps);
+			circ_buf__free(&combiners[i].past_results);
+		}
+	}
+	for (int i = 0; i<MAX_N_KEYS; ++i) {
+		key_infos[i].id = NULL;
+	}
+	pthread_mutex_destroy(&init_mutex);
 }
 
 bool fstore_register_map(const char* id, const char* key_id, int scratch_offs, unsigned scratch_sz, map_ptr_t* map, int n_past_track) {
