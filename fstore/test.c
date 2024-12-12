@@ -6,6 +6,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include <assert.h>
+#include <pthread.h>
 
 #include "fstore.h"
 
@@ -20,14 +21,15 @@ struct bio {
 	char scratch[16];
 };
 
-static bool cmp_bio_finish_times(struct bio* b1, struct bio* b2) {
-	return b1->finish_time < b2->finish_time;
+static int bio_key(struct bio* b) {
+	return b->finish_time;
 }
 
 struct bio_pq {
 	int size;
-	bool (*cmp_fn_lt)(struct bio*, struct bio*);
+	int (*key_fn)(struct bio*);
 	struct bio* arr[1024];
+	pthread_spinlock_t lock;
 };
 
 static void swap(struct bio** b1, struct bio** b2) {
@@ -36,47 +38,50 @@ static void swap(struct bio** b1, struct bio** b2) {
 	*b2 = tmp;
 }
 
-static void bio_pq__init(struct bio_pq* pq, bool (*cmp_fn_lt)(struct bio*, struct bio*)) {
+static void bio_pq__init(struct bio_pq* pq, int (*key_fn)(struct bio*)) {
 	pq->size = 0;
-	pq->cmp_fn_lt = cmp_fn_lt;
+	pq->key_fn = key_fn;
+	pthread_spin_init(&pq->lock, 0);
 }
 
 static bool bio_pq__push(struct bio_pq* pq, struct bio* b) {
+	pthread_spin_lock(&pq->lock);
 	int pos = pq->size++;
 	if (pos >= sizeof(pq->arr)/sizeof(pq->arr[0])) {
+		pthread_spin_unlock(&pq->lock);
 		return false;
 	}
 	pq->arr[pos] = b;
-	while (pos > 0 && pq->cmp_fn_lt(pq->arr[pos], pq->arr[pos / 2])) {
+	while (pos > 0 && pq->key_fn(pq->arr[pos]) < pq->key_fn(pq->arr[pos / 2])) {
 		swap(&pq->arr[pos], &pq->arr[pos / 2]);
 		pos /= 2;
 	}
+	pthread_spin_unlock(&pq->lock);
 	return true;
-
 }
 
-static bool bio_pq__top(struct bio_pq* pq, struct bio** fill) {
+static bool bio_pq__cond_pop(struct bio_pq* pq, struct bio** fill, int t) {
+	pthread_spin_lock(&pq->lock);
 	if (pq->size <= 0) {
+		pthread_spin_unlock(&pq->lock);
 		return false;
 	}
-	*fill = pq->arr[0];
-	return true;
-}
+	if (pq->key_fn(pq->arr[0]) >= t) {
+		pthread_spin_unlock(&pq->lock);
+		return false;
+	}
 
-static bool bio_pq__pop(struct bio_pq* pq) {
 	int pos = --(pq->size);
-	if (pos < 0) {
-		return false;
-	}
+	*fill = pq->arr[0];
 	swap(&pq->arr[0], &pq->arr[pos]);
 
 	pos = 0;
 	while (true) {
-		bool can_sift_left = pos*2 < pq->size && !pq->cmp_fn_lt(pq->arr[pos], pq->arr[pos*2]);
-		bool can_sift_right = pos*2+1 < pq->size && !pq->cmp_fn_lt(pq->arr[pos], pq->arr[pos*2+1]);
+		bool can_sift_left = pos*2 < pq->size && pq->key_fn(pq->arr[pos]) >= pq->key_fn(pq->arr[pos*2]);
+		bool can_sift_right = pos*2+1 < pq->size && pq->key_fn(pq->arr[pos]) >= pq->key_fn(pq->arr[pos*2+1]);
 
 		if (can_sift_left && can_sift_right) {
-			if (pq->cmp_fn_lt(pq->arr[2*pos], pq->arr[2*pos+1])) {
+			if (pq->key_fn(pq->arr[2*pos]) < pq->key_fn(pq->arr[2*pos+1])) {
 				swap(&pq->arr[pos], &pq->arr[2*pos]);
 				pos = 2*pos;
 			} else {
@@ -93,6 +98,7 @@ static bool bio_pq__pop(struct bio_pq* pq) {
 			break;
 		}
 	}
+	pthread_spin_unlock(&pq->lock);
 	return true;
 }
 
@@ -103,7 +109,7 @@ static void latency_fn(uint64_t* r, void* ret) {
 
 int main() {
 	struct bio_pq* pq = malloc(sizeof(struct bio_pq));
-	bio_pq__init(pq, cmp_bio_finish_times);
+	bio_pq__init(pq, bio_key);
 
 	map_ptr_t start_map;
 	fstore_register_map("bio__start_time", "bio", offsetof(struct bio, scratch), member_sz(struct bio, scratch), &start_map, 4);
@@ -116,13 +122,8 @@ int main() {
 
 	for (int t = 0; t < 1000; ++t) {
 		struct bio* top;
-		if (bio_pq__top(pq, &top) && top->finish_time <= t) {
-			bio_pq__pop(pq);
+		if (bio_pq__cond_pop(pq, &top, t)) {
 			fstore_insert(end_map, (uint64_t) top, (uint64_t) top->finish_time);
-			
-			uint64_t keys[2] = {(uint64_t) top, (uint64_t) top};
-			uint64_t* keys_ptr = &keys[0];
-
 			fstore_combine(combiner_id, NULL, 1);
 		}
 		if (t % 4 == 0) {
