@@ -2,8 +2,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
-#include <stdio.h>
-#include <assert.h>
 #include <pthread.h>
 
 #include "fstore.h"
@@ -89,7 +87,6 @@ static bool is_pow_2(int x) {
 	return (x & (x - 1)) == 0;
 }
 static void circ_buf__init(struct circ_buf_t* cbuf, int sz, int el_size) {
-	assert(is_pow_2(sz));
 	cbuf->sz = sz;
 	cbuf->el_size = el_size;
 	cbuf->p = 0;
@@ -176,6 +173,10 @@ void fstore_exit() {
 }
 
 bool fstore_register_map(const char* id, const char* key_id, int scratch_offs, unsigned scratch_sz, map_ptr_t* map, int n_past_track) {
+	if (!is_pow_2(n_past_track)) {
+		return false;
+	}
+
 	pthread_mutex_lock(&init_mutex);
 
 	int map_i = 0;
@@ -220,6 +221,10 @@ bool fstore_register_map(const char* id, const char* key_id, int scratch_offs, u
 }
 
 bool fstore_register_combiner_fn(int n_maps, int n_past, const char** ids, combiner_fn_t fn, int n_bytes_ret, combiner_id_t* id) {
+	if (!is_pow_2(n_past)) {
+		return false;
+	}
+
 	pthread_mutex_lock(&init_mutex);
 	int i = 0;
 	while (i < MAX_N_COMBINERS && combiners[i].maps != NULL) {
