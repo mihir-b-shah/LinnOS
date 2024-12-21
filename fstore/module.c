@@ -2,6 +2,7 @@
 #include <linux/module.h>
 #include <linux/spinlock.h>
 #include <linux/mutex.h>
+#include <linux/string.h>
 #include <linux/kernel.h>
 #include <linux/atomic.h>
 #include <linux/types.h>
@@ -20,6 +21,28 @@
 #define MAX_N_COMBINER_ARGS 16
 #define MAX_N_MAPS_PER_COMBINER 16
 
+typedef struct fstore_uuid_impl_t {
+	const char* strs[2];
+} fstore_uuid_t;
+
+static bool is_uuid_empty(const fstore_uuid_t* uuid) {
+	return uuid.strs[0] == NULL;
+}
+
+static bool uuid_eql(const fstore_uuid_t* uuid0, const fstore_uuid_t* uuid1) {
+	for (int i = 0; i<sizeof(uuid0->strs)/sizeof(uuid0->strs[0]); ++i) {
+		if (uuid0->strs[i] == NULL && uuid1->strs[i] == NULL) {
+			return true;
+		} else if (uuid0->strs[i] == NULL ^ uuid1->strs[i] == NULL) {
+			return false;
+		}
+		if (strcmp(uuid0->strs[i], uuid1->strs[i]) != 0) {
+			return false;
+		}
+	}
+	return true;
+}
+
 struct key_scratch_info_t {
 	const char* id;
 	int scratch_offs;
@@ -31,14 +54,14 @@ struct kv_t {
 	int p;
 	spinlock_t lock;
 	bool valid[HASH_TABLE_ASSOC];
-	key_type_t k[HASH_TABLE_ASSOC];
-	val_type_t v[HASH_TABLE_ASSOC];
+	fstore_key_type_t k[HASH_TABLE_ASSOC];
+	fstore_val_type_t v[HASH_TABLE_ASSOC];
 };
 struct hash_map_t {
 	int capacity;
 	struct kv_t* table;
 };
-static u64 hash(key_type_t x) {
+static u64 hash(fstore_key_type_t x) {
 	return x;
 }
 static void hash_map__init(struct hash_map_t* map, int sz) {
@@ -50,7 +73,7 @@ static void hash_map__init(struct hash_map_t* map, int sz) {
 		spin_lock_init(&map->table[i].lock);
 	}
 }
-static bool hash_map__insert(struct hash_map_t* map, key_type_t k, val_type_t v) {
+static bool hash_map__insert(struct hash_map_t* map, fstore_key_type_t k, fstore_val_type_t v) {
 	int pos;
 	struct kv_t* kv;
 
@@ -62,7 +85,7 @@ static bool hash_map__insert(struct hash_map_t* map, key_type_t k, val_type_t v)
 	spin_unlock(&kv->lock);
 	return true;
 }
-static bool hash_map__lookup(struct hash_map_t* map, key_type_t k, val_type_t* v) {
+static bool hash_map__lookup(struct hash_map_t* map, fstore_key_type_t k, fstore_val_type_t* v) {
 	int i;
 	struct kv_t* kv;
        
@@ -147,7 +170,7 @@ struct map_t {
 static struct map_t maps[MAX_N_MAPS];
 
 struct combiner_t {
-	combiner_fn_t fn;
+	fstore_combiner_fn_t fn;
 	int n_maps;
 	struct map_t** maps;
 	struct circ_buf_t past_results;
@@ -159,7 +182,7 @@ static void fstore_init(void) {
 	int i;
 	mutex_init(&fstore_init_mutex);
 	for (i = 0; i<MAX_N_MAPS; ++i) {
-		maps[i].id = NULL;
+		maps[i].id.strs[0] = NULL;
 	}
 	for (i = 0; i<MAX_N_COMBINERS; ++i) {
 		combiners[i].maps = NULL;
@@ -172,7 +195,7 @@ static void fstore_init(void) {
 static void fstore_exit(void) {
 	int i;
 	for (i = 0; i<MAX_N_MAPS; ++i) {
-		if (maps[i].id != NULL) {
+		if (is_uuid_empty(&maps[i].id)) {
 			hash_map__free(&maps[i].map);
 			circ_buf__free(&maps[i].past_keys);
 		}
@@ -188,7 +211,7 @@ static void fstore_exit(void) {
 	}
 }
 
-int fstore_register_map(const char* id, const char* key_id, int scratch_offs, unsigned scratch_sz, map_ptr_t* map, int n_past_track) {
+int fstore_register_map(fstore_uuid_t id, const char* key_id, int scratch_offs, unsigned scratch_sz, fstore_map_ptr_t* map, int n_past_track) {
 	int map_i;
 	int key_i;
 
@@ -198,7 +221,7 @@ int fstore_register_map(const char* id, const char* key_id, int scratch_offs, un
 	mutex_lock(&fstore_init_mutex);
 
 	map_i = 0;
-	while (map_i < MAX_N_MAPS && maps[map_i].id != NULL) {
+	while (map_i < MAX_N_MAPS && !is_uuid_empty(&maps[i].id)) {
 		map_i += 1;
 	}
 	if (map_i >= MAX_N_MAPS) {
@@ -222,23 +245,24 @@ int fstore_register_map(const char* id, const char* key_id, int scratch_offs, un
 	}
 
 	maps[map_i].id = id;
-	if (key_infos[key_i].scratch_sz >= sizeof(val_type_t)) {
+
+	if (key_infos[key_i].scratch_sz >= sizeof(fstore_val_type_t)) {
 		maps[map_i].scratch_offs = key_infos[key_i].scratch_offs;
-		key_infos[key_i].scratch_offs += sizeof(val_type_t);
-		key_infos[key_i].scratch_sz -= sizeof(val_type_t);
+		key_infos[key_i].scratch_offs += sizeof(fstore_val_type_t);
+		key_infos[key_i].scratch_sz -= sizeof(fstore_val_type_t);
 	} else {
 		maps[map_i].scratch_offs = -1;
 		hash_map__init(&maps[map_i].map, HASH_TABLE_SIZE);
 	}
 
-	circ_buf__init(&maps[map_i].past_keys, n_past_track, sizeof(key_type_t));
-	*map = (map_ptr_t) &maps[map_i];
+	circ_buf__init(&maps[map_i].past_keys, n_past_track, sizeof(fstore_key_type_t));
+	*map = (fstore_map_ptr_t) &maps[map_i];
 
 	mutex_unlock(&fstore_init_mutex);
 	return FSTORE_API_SUCCESS;
 }
 
-int fstore_register_combiner_fn(int n_maps, int n_past, const char** ids, combiner_fn_t fn, int n_bytes_ret, combiner_id_t* id) {
+int fstore_register_combiner_fn(int n_maps, int n_past, fstore_uuid_t* ids, fstore_combiner_fn_t fn, int n_bytes_ret, fstore_combiner_id_t* id) {
 	int i, j;
 	struct map_t** p_maps;
 
@@ -269,7 +293,7 @@ int fstore_register_combiner_fn(int n_maps, int n_past, const char** ids, combin
 
 	for (j = 0; j<n_maps; ++j) {
 		for (i = 0; i<MAX_N_MAPS; ++i) {
-			if (strcmp(maps[i].id, ids[j]) == 0) {
+			if (uuid_eql(&maps[i].id, &ids[j])) {
 				p_maps[j] = &maps[i];
 				break;
 			}
@@ -281,7 +305,8 @@ int fstore_register_combiner_fn(int n_maps, int n_past, const char** ids, combin
 	return FSTORE_API_SUCCESS;
 }
 
-int fstore_insert(map_ptr_t map_p, key_type_t k, val_type_t v) {
+// TODO add check if no one is subscribing to the map, don't report any data.
+int fstore_insert(fstore_map_ptr_t map_p, fstore_key_type_t k, fstore_val_type_t v) {
 	int ret;
 	struct map_t* map;
 	char* p;
@@ -289,27 +314,27 @@ int fstore_insert(map_ptr_t map_p, key_type_t k, val_type_t v) {
 	map = (struct map_t*) map_p;
 	if (map->scratch_offs >= 0) {
 		char* scratch_p = ((char*) k) + map->scratch_offs;
-		*((val_type_t*) scratch_p) = v;
+		*((fstore_val_type_t*) scratch_p) = v;
 		ret = FSTORE_API_SUCCESS;
 	} else {
 		ret = hash_map__insert(&map->map, k, v) ? FSTORE_API_SUCCESS : FSTORE_API_FAILURE;
 	}
 
 	p = circ_buf__alloc(&map->past_keys);
-	memcpy(p, &k, sizeof(key_type_t));
+	memcpy(p, &k, sizeof(fstore_key_type_t));
 	circ_buf__mark_visible(&map->past_keys);
 
 	return ret;
 }
 
-int fstore_combine(combiner_id_t id, key_type_t* keys, int lookup_dim) {
+int fstore_combine(fstore_combiner_id_t id, fstore_key_type_t* keys, int lookup_dim) {
 	int j;
-	key_type_t* map_keys;
-	val_type_t args[MAX_N_COMBINER_ARGS];
+	fstore_key_type_t* map_keys;
+	fstore_val_type_t args[MAX_N_COMBINER_ARGS];
 	struct combiner_t* m;
-	key_type_t map_keys_buf[MAX_N_MAPS_PER_COMBINER];
-	key_type_t k;
-	val_type_t v;
+	fstore_key_type_t map_keys_buf[MAX_N_MAPS_PER_COMBINER];
+	fstore_key_type_t k;
+	fstore_val_type_t v;
 	char* p;
 	struct map_t* map;
 
@@ -339,7 +364,7 @@ int fstore_combine(combiner_id_t id, key_type_t* keys, int lookup_dim) {
 		map = m->maps[j];
 		if (map->scratch_offs >= 0) {
 			p = ((char*) map_keys[j]) + map->scratch_offs;
-			v = *((val_type_t*) p);
+			v = *((fstore_val_type_t*) p);
 		} else {
 			if (!hash_map__lookup(&map->map, map_keys[j], &v)) {
 				return FSTORE_API_FAILURE;
@@ -352,7 +377,7 @@ int fstore_combine(combiner_id_t id, key_type_t* keys, int lookup_dim) {
 	return FSTORE_API_SUCCESS;
 }
 
-int fstore_query_past(combiner_id_t id, int n_past, void** vals) {
+int fstore_query_past(fstore_combiner_id_t id, int n_past, void** vals) {
 	int i;
 	struct combiner_t* m;
 	char* p;
