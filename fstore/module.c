@@ -21,19 +21,16 @@
 #define MAX_N_COMBINER_ARGS 16
 #define MAX_N_MAPS_PER_COMBINER 16
 
-typedef struct fstore_uuid_impl_t {
-	const char* strs[2];
-} fstore_uuid_t;
-
 static bool is_uuid_empty(const fstore_uuid_t* uuid) {
-	return uuid.strs[0] == NULL;
+	return uuid->strs[0] == NULL;
 }
 
 static bool uuid_eql(const fstore_uuid_t* uuid0, const fstore_uuid_t* uuid1) {
-	for (int i = 0; i<sizeof(uuid0->strs)/sizeof(uuid0->strs[0]); ++i) {
+	int i;
+	for (i = 0; i<sizeof(uuid0->strs)/sizeof(uuid0->strs[0]); ++i) {
 		if (uuid0->strs[i] == NULL && uuid1->strs[i] == NULL) {
 			return true;
-		} else if (uuid0->strs[i] == NULL ^ uuid1->strs[i] == NULL) {
+		} else if ((uuid0->strs[i] == NULL) ^ (uuid1->strs[i] == NULL)) {
 			return false;
 		}
 		if (strcmp(uuid0->strs[i], uuid1->strs[i]) != 0) {
@@ -162,7 +159,7 @@ static void circ_buf__free(struct circ_buf_t* cbuf) {
 }
 
 struct map_t {
-	const char* id;
+	fstore_uuid_t id;
 	int scratch_offs;
 	struct hash_map_t map;
 	struct circ_buf_t past_keys;
@@ -221,7 +218,7 @@ int fstore_register_map(fstore_uuid_t id, const char* key_id, int scratch_offs, 
 	mutex_lock(&fstore_init_mutex);
 
 	map_i = 0;
-	while (map_i < MAX_N_MAPS && !is_uuid_empty(&maps[i].id)) {
+	while (map_i < MAX_N_MAPS && !is_uuid_empty(&maps[map_i].id)) {
 		map_i += 1;
 	}
 	if (map_i >= MAX_N_MAPS) {
