@@ -19,7 +19,6 @@
 #define HASH_TABLE_SIZE 4096
 #define HASH_TABLE_ASSOC 1
 #define MAX_N_COMBINER_ARGS 16
-#define MAX_N_MAPS_PER_COMBINER 16
 
 static bool is_uuid_empty(const fstore_uuid_t* uuid) {
 	return uuid->strs[0] == NULL;
@@ -166,13 +165,6 @@ struct map_t {
 };
 static struct map_t maps[MAX_N_MAPS];
 
-struct combiner_t {
-	fstore_combiner_fn_t fn;
-	int n_maps;
-	struct map_t** maps;
-	struct circ_buf_t past_results;
-};
-static struct combiner_t combiners[MAX_N_COMBINERS];
 static struct mutex fstore_init_mutex;
 
 static void fstore_init(void) {
@@ -180,9 +172,6 @@ static void fstore_init(void) {
 	mutex_init(&fstore_init_mutex);
 	for (i = 0; i<MAX_N_MAPS; ++i) {
 		maps[i].id.strs[0] = NULL;
-	}
-	for (i = 0; i<MAX_N_COMBINERS; ++i) {
-		combiners[i].maps = NULL;
 	}
 	for (i = 0; i<MAX_N_KEYS; ++i) {
 		key_infos[i].id = NULL;
@@ -195,12 +184,6 @@ static void fstore_exit(void) {
 		if (is_uuid_empty(&maps[i].id)) {
 			hash_map__free(&maps[i].map);
 			circ_buf__free(&maps[i].past_keys);
-		}
-	}
-	for (i = 0; i<MAX_N_COMBINERS; ++i) {
-		if (combiners[i].maps != NULL) {
-			kfree(combiners[i].maps);
-			circ_buf__free(&combiners[i].past_results);
 		}
 	}
 	for (i = 0; i<MAX_N_KEYS; ++i) {
@@ -259,45 +242,21 @@ int fstore_register_map(fstore_uuid_t id, const char* key_id, int scratch_offs, 
 	return FSTORE_API_SUCCESS;
 }
 
-int fstore_register_combiner_fn(int n_maps, int n_past, fstore_uuid_t* ids, fstore_combiner_fn_t fn, int n_bytes_ret, fstore_combiner_id_t* id) {
-	int i, j;
-	struct map_t** p_maps;
-
-	if (!is_pow_2(n_past)) {
-		return FSTORE_API_FAILURE;
-	}
-
+int fstore_register_subscriber(int n_maps, fstore_uuid_t* ids, fstore_map_ptr_t* maps_fill) {
+	int i,j;
 	mutex_lock(&fstore_init_mutex);
-	i = 0;
-	while (i < MAX_N_COMBINERS && combiners[i].maps != NULL) {
-		i += 1;
-	}
-	if (i >= MAX_N_COMBINERS) {
-		mutex_unlock(&fstore_init_mutex);
-		return FSTORE_API_FAILURE;
-	}
-	if (n_maps > MAX_N_MAPS_PER_COMBINER) {
-		mutex_unlock(&fstore_init_mutex);
-		return FSTORE_API_FAILURE;
-	}
-
-	combiners[i].n_maps = n_maps;
-	combiners[i].fn = fn;
-	circ_buf__init(&combiners[i].past_results, n_past, n_bytes_ret);
-
-	p_maps = kzalloc(sizeof(struct map_t*) * n_maps, GFP_KERNEL);
-	combiners[i].maps = p_maps;
-
 	for (j = 0; j<n_maps; ++j) {
 		for (i = 0; i<MAX_N_MAPS; ++i) {
 			if (uuid_eql(&maps[i].id, &ids[j])) {
-				p_maps[j] = &maps[i];
+				maps_fill[j] = (fstore_map_ptr_t) &maps[i];
 				break;
 			}
 		}
+		if (i >= MAX_N_MAPS) {
+			mutex_unlock(&fstore_init_mutex);
+			return FSTORE_API_FAILURE;
+		}
 	}
-
-	*id = i;
 	mutex_unlock(&fstore_init_mutex);
 	return FSTORE_API_SUCCESS;
 }
@@ -324,71 +283,27 @@ int fstore_insert(fstore_map_ptr_t map_p, fstore_key_type_t k, fstore_val_type_t
 	return ret;
 }
 
-int fstore_combine(fstore_combiner_id_t id, fstore_key_type_t* keys, int lookup_dim) {
-	int j;
-	fstore_key_type_t* map_keys;
-	fstore_val_type_t args[MAX_N_COMBINER_ARGS];
-	struct combiner_t* m;
-	fstore_key_type_t map_keys_buf[MAX_N_MAPS_PER_COMBINER];
-	fstore_key_type_t k;
-	fstore_val_type_t v;
-	char* p;
-	struct map_t* map;
+int fstore_get_past_keys(fstore_map_ptr_t p, int n_past, fstore_key_type_t* keys) {
+	struct map_t* m;
 
-	m = &combiners[id];
-	if (keys == NULL) {
-		if (lookup_dim == -1) {
-			for (j = 0; j<m->n_maps; ++j) {
-				map = m->maps[j];
-				if (!circ_buf__get(&map->past_keys, 0, &map_keys_buf[j])) {
-					return FSTORE_API_FAILURE;
-				}
-			}
-		} else {
-			map = m->maps[lookup_dim];
-			if (!circ_buf__get(&map->past_keys, 0, &k)) {
-				return FSTORE_API_FAILURE;
-			}
-			for (j = 0; j<m->n_maps; ++j) {
-				map_keys_buf[j] = k;
-			}
-		}
-		map_keys = &map_keys_buf[0];
-	} else {
-		map_keys = keys;
-	}
-	for (j = 0; j<m->n_maps; ++j) {
-		map = m->maps[j];
-		if (map->scratch_offs >= 0) {
-			p = ((char*) map_keys[j]) + map->scratch_offs;
-			v = *((fstore_val_type_t*) p);
-		} else {
-			if (!hash_map__lookup(&map->map, map_keys[j], &v)) {
-				return FSTORE_API_FAILURE;
-			}
-		}
-		args[j] = v;
-	}
-	m->fn(&args[0], circ_buf__alloc(&m->past_results));
-	circ_buf__mark_visible(&m->past_results);
-	return FSTORE_API_SUCCESS;
-}
-
-int fstore_query_past(fstore_combiner_id_t id, int n_past, void** vals) {
-	int i;
-	struct combiner_t* m;
-	char* p;
-       
-	m = &combiners[id];
+	m = (struct map_t*) p;
 	if (n_past > m->past_results.sz) {
 		return FSTORE_API_FAILURE;
 	}
-
 	for (i = n_past-1; i>=0; --i) {
-		p = (char*) vals[i];
-		if (!circ_buf__get(&m->past_results, i, p)) {
+		if (!circ_buf__get(&m->past_keys, i, &keys[i])) {
 			return FSTORE_API_FAILURE;
 		}
+	}
+	return FSTORE_API_SUCCESS;
+}
+
+int fstore_query(fstore_map_ptr_t p, fstore_key_type_t k, fstore_val_type_t* val) {
+	struct map_t* m;
+
+	m = (struct map_t*) p;
+	if (!hash_map__lookup(&m->map, k, val)) {
+		return FSTORE_API_FAILURE;
 	}
 	return FSTORE_API_SUCCESS;
 }
