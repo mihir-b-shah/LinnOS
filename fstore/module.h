@@ -44,7 +44,7 @@ int fstore_register_subscriber(int n_maps, fstore_uuid_t* ids, fstore_map_ptr_t*
 
 /*
 This is the data plane operation for reporting data. It takes the map handle obtained from the register_map function, and inserts
-(k,v) pair into that map.
+(k,v) pair into that map. If k is already there, v is updated.
 */
 int fstore_insert(fstore_map_ptr_t p, fstore_key_type_t k, fstore_val_type_t v);
 

@@ -70,11 +70,19 @@ static void hash_map__init(struct hash_map_t* map, int sz) {
 	}
 }
 static bool hash_map__insert(struct hash_map_t* map, fstore_key_type_t k, fstore_val_type_t v) {
+	int i;
 	int pos;
 	struct kv_t* kv;
 
 	kv = &map->table[hash(k)];
 	spin_lock(&kv->lock);
+	for (i = 0; i<HASH_TABLE_ASSOC; ++i) {
+		if (kv->k[i] == k) {
+			kv->v[i] = v;
+			spin_unlock(&kv->lock);
+			return true;
+		}
+	}
 	pos = kv->p++ % HASH_TABLE_ASSOC;
 	kv->k[pos] = k;
 	kv->v[pos] = v;
@@ -90,6 +98,7 @@ static bool hash_map__lookup(struct hash_map_t* map, fstore_key_type_t k, fstore
 	for (i = 0; i<HASH_TABLE_ASSOC; ++i) {
 		if (kv->k[i] == k) {
 			*v = kv->v[i];
+			spin_unlock(&kv->lock);
 			return true;
 		}
 	}
