@@ -906,7 +906,7 @@ int bdev_open(struct block_device *bdev, blk_mode_t mode, void *holder,
 	uuid_queue_ss.strs[1] = "__queue_ss";
 	fstore_register_map(uuid_queue_ss, "bio", offsetof(struct bio, fstore_scratch), sizeof(((struct bio*) NULL)->fstore_scratch), &bdev->fstore_queue_ss, 16);
 	
-	fstore_uuid_t uuids[] = {uuid_start, uuid_end, uuid_queue_depth};	
+	fstore_uuid_t uuids[] = {uuid_start, uuid_end, uuid_queue_ss};	
 	fstore_register_subscriber(3, &uuids[0], &linnos_map_refs[0]);
 
 	bool unblock_events = true;
