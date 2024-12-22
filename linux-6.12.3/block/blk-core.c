@@ -768,7 +768,28 @@ void submit_bio_noacct(struct bio *bio)
 	struct request_queue *q = bdev_get_queue(bdev);
 	blk_status_t status = BLK_STS_IOERR;
 
+	fstore_insert(&bdev->fstore_start_times, bio, ktime_get_ns());
+
+	fstore_val_type_t curr_n_reads;
+	fstore_query(&bdev->fstore_queued_reads, q, &curr_n_reads);
+	fstore_insert(&bdev->fstore_queued_reads, q, curr_n_reads + ((bio_sectors(bio) + 7) / 8));
+
+	fstore_insert(&bdev->fstore_queued_ss, q, curr_n_reads);
+
 	might_sleep();
+
+	fstore_key_type_t past_keys[4];
+	fstore_get_past_keys(bdev->fstore_end_times, 4, &past_keys);
+	for (int i = 0; i<4; ++i) {
+		fstore_val_type_t queue_depth, start_time, end_time;
+		fstore_query(&bdev->fstore_end_times, past_keys[i], &v);
+		fstore_query(&bdev->fstore_start_times, past_keys[i], &v);
+		fstore_query(&bdev->fstore_queue_ss, past_keys[i], &v);
+	}
+	fstore_val_type_t curr_queue_depth;
+	fstore_query(&bdev->fstore_queue_ss, bio, &curr_queue_depth);
+
+	/* TODO use the queried values in the model */
 
 	/*
 	 * For a REQ_NOWAIT based request, return -EOPNOTSUPP

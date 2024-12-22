@@ -54,6 +54,16 @@ struct block_device {
 #ifdef CONFIG_FAIL_MAKE_REQUEST
 #define BD_MAKE_IT_FAIL		(1u<<12)
 #endif
+	
+	// reporting structures
+	fstore_map_ptr_t fstore_start_times;
+	fstore_map_ptr_t fstore_end_times;
+	fstore_map_ptr_t fstore_queued_reads;
+	fstore_map_ptr_t fstore_queue_ss;
+
+	// subscribing structures
+	fstore_map_ptr_t linnos_map_refs[3];
+
 	dev_t			bd_dev;
 	struct address_space	*bd_mapping;	/* page cache */
 
@@ -268,6 +278,8 @@ struct bio {
 	struct bio_vec		*bi_io_vec;	/* the actual vec list */
 
 	struct bio_set		*bi_pool;
+
+	char fstore_scratch[16];
 
 	/*
 	 * We can inline a number of vecs at the end of the bio, to avoid
