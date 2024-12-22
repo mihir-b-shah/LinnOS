@@ -285,9 +285,10 @@ int fstore_insert(fstore_map_ptr_t map_p, fstore_key_type_t k, fstore_val_type_t
 
 int fstore_get_past_keys(fstore_map_ptr_t p, int n_past, fstore_key_type_t* keys) {
 	struct map_t* m;
+	int i;
 
 	m = (struct map_t*) p;
-	if (n_past > m->past_results.sz) {
+	if (n_past > m->past_keys.sz) {
 		return FSTORE_API_FAILURE;
 	}
 	for (i = n_past-1; i>=0; --i) {
