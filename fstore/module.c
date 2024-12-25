@@ -184,9 +184,11 @@ static void fstore_init(void) {
 	for (i = 0; i<MAX_N_KEYS; ++i) {
 		key_infos[i].id = NULL;
 	}
+	printk(KERN_INFO "fstore initialized.\n");
 }
 
 static void fstore_exit(void) {
+	/*
 	int i;
 	for (i = 0; i<MAX_N_MAPS; ++i) {
 		if (is_uuid_empty(&maps[i].id)) {
@@ -197,9 +199,11 @@ static void fstore_exit(void) {
 	for (i = 0; i<MAX_N_KEYS; ++i) {
 		key_infos[i].id = NULL;
 	}
+	*/
 }
 
 int fstore_register_map(fstore_uuid_t id, const char* key_id, int scratch_offs, unsigned scratch_sz, fstore_map_ptr_t* map, int n_past_track) {
+	/*
 	int map_i;
 	int key_i;
 
@@ -248,9 +252,12 @@ int fstore_register_map(fstore_uuid_t id, const char* key_id, int scratch_offs, 
 
 	mutex_unlock(&fstore_init_mutex);
 	return FSTORE_API_SUCCESS;
+	*/
+	return FSTORE_API_SUCCESS;
 }
 
 int fstore_register_subscriber(int n_maps, fstore_uuid_t* ids, fstore_map_ptr_t* maps_fill) {
+	/*
 	int i,j;
 	mutex_lock(&fstore_init_mutex);
 	for (j = 0; j<n_maps; ++j) {
@@ -267,10 +274,13 @@ int fstore_register_subscriber(int n_maps, fstore_uuid_t* ids, fstore_map_ptr_t*
 	}
 	mutex_unlock(&fstore_init_mutex);
 	return FSTORE_API_SUCCESS;
+	*/
+	return FSTORE_API_SUCCESS;
 }
 
 // TODO add check if no one is subscribing to the map, don't report any data.
 int fstore_insert(fstore_map_ptr_t map_p, fstore_key_type_t k, fstore_val_type_t v) {
+	/*
 	int ret;
 	struct map_t* map;
 	char* p;
@@ -289,9 +299,12 @@ int fstore_insert(fstore_map_ptr_t map_p, fstore_key_type_t k, fstore_val_type_t
 	circ_buf__mark_visible(&map->past_keys);
 
 	return ret;
+	*/
+	return FSTORE_API_SUCCESS;
 }
 
 int fstore_get_past_keys(fstore_map_ptr_t p, int n_past, fstore_key_type_t* keys) {
+	/*
 	struct map_t* m;
 	int i;
 
@@ -305,15 +318,20 @@ int fstore_get_past_keys(fstore_map_ptr_t p, int n_past, fstore_key_type_t* keys
 		}
 	}
 	return FSTORE_API_SUCCESS;
+	*/
+	return FSTORE_API_SUCCESS;
 }
 
 int fstore_query(fstore_map_ptr_t p, fstore_key_type_t k, fstore_val_type_t* val) {
+	/*
 	struct map_t* m;
 
 	m = (struct map_t*) p;
 	if (!hash_map__lookup(&m->map, k, val)) {
 		return FSTORE_API_FAILURE;
 	}
+	return FSTORE_API_SUCCESS;
+	*/
 	return FSTORE_API_SUCCESS;
 }
 
