@@ -335,9 +335,11 @@ int fstore_query(fstore_map_ptr_t p, fstore_key_type_t k, fstore_val_type_t* val
 	return FSTORE_API_SUCCESS;
 }
 
-static void __init fv_init(void) {
+static int __init fv_init(void) {
 	fstore_init();
+	return 0;
 }
+late_initcall(fv_init)
 
 static void __exit fv_exit(void) {
 	fstore_exit();
