@@ -188,7 +188,6 @@ static void fstore_init(void) {
 }
 
 static void fstore_exit(void) {
-	/*
 	int i;
 	for (i = 0; i<MAX_N_MAPS; ++i) {
 		if (is_uuid_empty(&maps[i].id)) {
@@ -199,15 +198,14 @@ static void fstore_exit(void) {
 	for (i = 0; i<MAX_N_KEYS; ++i) {
 		key_infos[i].id = NULL;
 	}
-	*/
 }
 
 int fstore_register_map(fstore_uuid_t id, const char* key_id, int scratch_offs, unsigned scratch_sz, fstore_map_ptr_t* map, int n_past_track) {
-	/*
 	int map_i;
 	int key_i;
 
 	if (!is_pow_2(n_past_track)) {
+		printk(KERN_INFO "register map failed.\n");
 		return FSTORE_API_FAILURE;
 	}
 	mutex_lock(&fstore_init_mutex);
@@ -218,6 +216,7 @@ int fstore_register_map(fstore_uuid_t id, const char* key_id, int scratch_offs, 
 	}
 	if (map_i >= MAX_N_MAPS) {
 		mutex_unlock(&fstore_init_mutex);
+		printk(KERN_INFO "register map failed.\n");
 		return FSTORE_API_FAILURE;
 	}
 
@@ -227,6 +226,7 @@ int fstore_register_map(fstore_uuid_t id, const char* key_id, int scratch_offs, 
 	}
 	if (key_i >= MAX_N_KEYS) {
 		mutex_unlock(&fstore_init_mutex);
+		printk(KERN_INFO "register map failed.\n");
 		return FSTORE_API_FAILURE;
 	}
 
@@ -251,8 +251,7 @@ int fstore_register_map(fstore_uuid_t id, const char* key_id, int scratch_offs, 
 	*map = (fstore_map_ptr_t) &maps[map_i];
 
 	mutex_unlock(&fstore_init_mutex);
-	return FSTORE_API_SUCCESS;
-	*/
+	printk(KERN_INFO "register map succeeded.\n");
 	return FSTORE_API_SUCCESS;
 }
 
