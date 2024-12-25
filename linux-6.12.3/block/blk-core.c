@@ -775,7 +775,7 @@ void submit_bio_noacct(struct bio *bio)
 	fstore_query(&bdev->fstore_queued_reads, (fstore_key_type_t) q, &curr_n_reads);
 	fstore_insert(&bdev->fstore_queued_reads, (fstore_key_type_t) q, curr_n_reads + ((bio_sectors(bio) + 7) / 8));
 
-	fstore_insert(&bdev->fstore_queue_ss, (fstore_key_type_t) q, curr_n_reads);
+	fstore_insert(&bdev->fstore_queue_ss, (fstore_key_type_t) bio, curr_n_reads);
 
 	might_sleep();
 

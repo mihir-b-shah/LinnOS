@@ -514,7 +514,7 @@ struct request_queue {
 	 */
 	int			id;
 
-	char fstore_scratch[16];
+	char fstore_scratch[8];
 
 	/*
 	 * queue settings
