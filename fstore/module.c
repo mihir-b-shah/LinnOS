@@ -10,8 +10,7 @@
 #include <linux/slab.h>
 #include <linux/uaccess.h>
 #include <linux/namei.h>
-
-#include "module.h"
+#include <linux/fstore.h>
 
 #define MAX_N_MAPS 256
 #define MAX_N_KEYS 256
@@ -318,21 +317,10 @@ int fstore_query(fstore_map_ptr_t p, fstore_key_type_t k, fstore_val_type_t* val
 	return FSTORE_API_SUCCESS;
 }
 
-static int __init lake_fv_init(void) {
+static void __init fv_init(void) {
 	fstore_init();
-	printk(KERN_INFO "lake_fv: module loaded\n");
-	return 0;
 }
 
-static void __exit lake_fv_exit(void) {
+static void __exit fv_exit(void) {
 	fstore_exit();
-	printk(KERN_INFO "lake_fv: module unloaded\n");
 }
-
-// Register the module initialization and exit functions
-module_init(lake_fv_init);
-module_exit(lake_fv_exit);
-
-MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("Fstore");
-MODULE_AUTHOR("fat rat");
