@@ -12,12 +12,10 @@
 #include <linux/namei.h>
 #include <linux/fstore.h>
 
-#define MAX_N_MAPS 256
+#define MAX_N_MAPS 2048
 #define MAX_N_KEYS 256
-#define MAX_N_COMBINERS 256
 #define HASH_TABLE_SIZE 4096
 #define HASH_TABLE_ASSOC 1
-#define MAX_N_COMBINER_ARGS 16
 
 static bool is_uuid_empty(const fstore_uuid_t* uuid) {
 	return uuid->strs[0] == NULL;
@@ -256,7 +254,6 @@ int fstore_register_map(fstore_uuid_t id, const char* key_id, int scratch_offs, 
 }
 
 int fstore_register_subscriber(int n_maps, fstore_uuid_t* ids, fstore_map_ptr_t* maps_fill) {
-	/*
 	int i,j;
 	mutex_lock(&fstore_init_mutex);
 	for (j = 0; j<n_maps; ++j) {
@@ -268,12 +265,12 @@ int fstore_register_subscriber(int n_maps, fstore_uuid_t* ids, fstore_map_ptr_t*
 		}
 		if (i >= MAX_N_MAPS) {
 			mutex_unlock(&fstore_init_mutex);
+			printk(KERN_INFO "register subscriber failed.\n");
 			return FSTORE_API_FAILURE;
 		}
 	}
 	mutex_unlock(&fstore_init_mutex);
-	return FSTORE_API_SUCCESS;
-	*/
+	printk(KERN_INFO "register subscriber succeeded.\n");
 	return FSTORE_API_SUCCESS;
 }
 
