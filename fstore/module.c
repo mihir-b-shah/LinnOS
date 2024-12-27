@@ -276,7 +276,6 @@ int fstore_register_subscriber(int n_maps, fstore_uuid_t* ids, fstore_map_ptr_t*
 
 // TODO add check if no one is subscribing to the map, don't report any data.
 int fstore_insert(fstore_map_ptr_t map_p, fstore_key_type_t k, fstore_val_type_t v) {
-	/*
 	int ret;
 	struct map_t* map;
 	char* p;
@@ -295,8 +294,6 @@ int fstore_insert(fstore_map_ptr_t map_p, fstore_key_type_t k, fstore_val_type_t
 	circ_buf__mark_visible(&map->past_keys);
 
 	return ret;
-	*/
-	return FSTORE_API_SUCCESS;
 }
 
 int fstore_get_past_keys(fstore_map_ptr_t p, int n_past, fstore_key_type_t* keys) {
