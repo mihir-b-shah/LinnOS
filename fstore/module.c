@@ -293,6 +293,10 @@ int fstore_insert(fstore_map_ptr_t map_p, fstore_key_type_t k, fstore_val_type_t
 	memcpy(p, &k, sizeof(fstore_key_type_t));
 	circ_buf__mark_visible(&map->past_keys);
 
+	if (ret != FSTORE_API_SUCCESS) {
+		printk(KERN_INFO "fstore_insert failed");
+	}
+
 	return ret;
 }
 
@@ -306,6 +310,7 @@ int fstore_get_past_keys(fstore_map_ptr_t p, int n_past, fstore_key_type_t* keys
 	}
 	for (i = n_past-1; i>=0; --i) {
 		if (!circ_buf__get(&m->past_keys, i, &keys[i])) {
+			printk(KERN_INFO "fstore_get_past_keys failed");
 			return FSTORE_API_FAILURE;
 		}
 	}
@@ -321,6 +326,7 @@ int fstore_query(fstore_map_ptr_t p, fstore_key_type_t k, fstore_val_type_t* val
 		*val = *((fstore_val_type_t*) scratch_p);
 	} else {
 		if (!hash_map__lookup(&m->map, k, val)) {
+			printk(KERN_INFO "fstore_query failed");
 			return FSTORE_API_FAILURE;
 		}
 	}
