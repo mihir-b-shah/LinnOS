@@ -789,6 +789,8 @@ void submit_bio_noacct(struct bio *bio)
 	}
 	fstore_val_type_t curr_queue_depth;
 	fstore_query(bdev->fstore_queue_ss, (fstore_key_type_t) bio, &curr_queue_depth);
+	
+	printk(KERN_INFO "queue_ss: %ld\n", curr_queue_depth);
 
 	/* TODO use the queried values in the model */
 
