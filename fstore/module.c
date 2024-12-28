@@ -316,8 +316,13 @@ int fstore_query(fstore_map_ptr_t p, fstore_key_type_t k, fstore_val_type_t* val
 	struct map_t* m;
 
 	m = (struct map_t*) p;
-	if (!hash_map__lookup(&m->map, k, val)) {
-		return FSTORE_API_FAILURE;
+	if (m->scratch_offs >= 0) {
+		char* scratch_p = ((char*) k) + m->scratch_offs;
+		*val = *((fstore_val_type_t*) scratch_p);
+	} else {
+		if (!hash_map__lookup(&m->map, k, val)) {
+			return FSTORE_API_FAILURE;
+		}
 	}
 	return FSTORE_API_SUCCESS;
 }
