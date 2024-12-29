@@ -3,10 +3,8 @@
 #ifndef _FSTORE_H_
 #define _FSTORE_H_
 
-/*
 #include <linux/types.h>
-*/
-#include "kernel-api.h"
+//#include "kernel-api.h"
 
 #define FSTORE_API_SUCCESS 0
 #define FSTORE_API_FAILURE -1
