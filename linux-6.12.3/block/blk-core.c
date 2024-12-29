@@ -770,6 +770,7 @@ void submit_bio_noacct(struct bio *bio)
 	blk_status_t status = BLK_STS_IOERR;
 
 	fstore_insert(bdev->fstore_start_times, (fstore_key_type_t) bio, ktime_get_ns());
+	fstore_insert(bdev->fstore_sectors, (fstore_key_type_t) bio, (bio_sectors(bio) + 7) / 8);
 
 	fstore_val_type_t curr_n_reads = 0;
 	fstore_query(bdev->fstore_queued_reads, (fstore_key_type_t) q, &curr_n_reads);
@@ -790,7 +791,7 @@ void submit_bio_noacct(struct bio *bio)
 	}
 	fstore_val_type_t curr_queue_depth;
 	if (fstore_query(bdev->fstore_queue_ss, (fstore_key_type_t) bio, &curr_queue_depth) == FSTORE_API_SUCCESS) {
-		printk(KERN_INFO "bio: %p:%s queue_ss: %ld\n", bio, dev_name(bdev), curr_queue_depth);
+		printk(KERN_INFO "bio: %p:%p queue_ss: %ld\n", bio, bdev, curr_queue_depth);
 	}
 
 	/* TODO use the queried values in the model */

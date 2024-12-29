@@ -59,11 +59,12 @@ struct block_device {
 	// reporting structures
 	fstore_map_ptr_t fstore_start_times;
 	fstore_map_ptr_t fstore_end_times;
-	fstore_map_ptr_t fstore_queued_reads;
 	fstore_map_ptr_t fstore_queue_ss;
+	fstore_map_ptr_t fstore_sectors;
+	fstore_map_ptr_t fstore_queued_reads;
 
 	// subscribing structures
-	fstore_map_ptr_t linnos_map_refs[3];
+	fstore_map_ptr_t linnos_map_refs[4];
 
 	dev_t			bd_dev;
 	struct address_space	*bd_mapping;	/* page cache */
