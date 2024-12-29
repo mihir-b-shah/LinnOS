@@ -8,7 +8,7 @@
 #include <assert.h>
 #include <pthread.h>
 
-#include "fstore.h"
+#include "module.h"
 
 #define member_sz(st, m) sizeof(((st*) 0)->m)
 
@@ -102,36 +102,48 @@ static bool bio_pq__cond_pop(struct bio_pq* pq, struct bio** fill, int t) {
 	return true;
 }
 
-static void latency_fn(uint64_t* r, void* ret) {
-	uint64_t latency = r[1] - r[0];
-	memcpy(ret, &latency, sizeof(latency));
-}
-
 int main() {
 	struct bio_pq* pq = malloc(sizeof(struct bio_pq));
 	bio_pq__init(pq, bio_key);
 
-	map_ptr_t start_map;
-	fstore_register_map("bio__start_time", "bio", offsetof(struct bio, scratch), member_sz(struct bio, scratch), &start_map, 4);
-	map_ptr_t end_map;
+	fstore_uuid_t uuid_start;
+	uuid_start.strs[0] = "sda";
+	uuid_start.strs[1] = "bio__start_time";
+	fstore_uuid_t uuid_end;
+	uuid_end.strs[0] = "sda";
+	uuid_end.strs[1] = "bio__end_time";
 
-	fstore_register_map("bio__end_time", "bio", offsetof(struct bio, scratch), member_sz(struct bio, scratch), &end_map, 4);
-	const char* ids[2] = {"bio__start_time", "bio__end_time"};
-	combiner_id_t combiner_id;
-	fstore_register_combiner_fn(2, 4, &ids[0], latency_fn, sizeof(uint64_t), &combiner_id);
+	fv_init();
+
+	fstore_map_ptr_t start_map;
+	if (fstore_register_map(uuid_start, "bio", offsetof(struct bio, scratch), member_sz(struct bio, scratch), &start_map, 16) != FSTORE_API_SUCCESS) {
+		printf("big sad\n");
+	}
+	fstore_map_ptr_t end_map;
+	if (fstore_register_map(uuid_end, "bio", offsetof(struct bio, scratch), member_sz(struct bio, scratch), &end_map, 16) != FSTORE_API_SUCCESS) {
+		printf("big sad 2\n");
+	}
 
 	for (int t = 0; t < 1000; ++t) {
 		struct bio* top;
 		if (bio_pq__cond_pop(pq, &top, t)) {
 			fstore_insert(end_map, (uint64_t) top, (uint64_t) top->finish_time);
-			fstore_combine(combiner_id, NULL, 1);
 		}
 		if (t % 4 == 0) {
-			char fill[sizeof(uint64_t) * 4];
-			void* arr[4] = {&fill[0], &fill[sizeof(uint64_t)], &fill[2 * sizeof(uint64_t)], &fill[3 * sizeof(uint64_t)]};
-			bool r = fstore_query_past(combiner_id, 4, &arr[0]);
+			fstore_key_type_t keys[4];
+			bool r = true;
+			r &= fstore_get_past_keys(end_map, 4, &keys[0]) == FSTORE_API_SUCCESS;
+			uint64_t latency[4];
 			if (r) {
-				printf("t: %d v: %d | past_latency: %d %d %d %d\n", t, r, (int) *((uint64_t*) arr[0]), (int) *((uint64_t*) arr[1]), (int) *((uint64_t*) arr[2]), (int) *((uint64_t*) arr[3]));
+				for (int i = 0; i<4; ++i) {
+					fstore_val_type_t start_time, end_time;
+					r &= fstore_query(start_map, keys[i], &start_time) == FSTORE_API_SUCCESS;
+					r &= fstore_query(end_map, keys[i], &end_time) == FSTORE_API_SUCCESS;
+					latency[i] = (int) (end_time - start_time);
+				}
+				if (r) {
+					printf("t: %d | past_latency: %lu %lu %lu %lu\n", t, latency[0], latency[1], latency[2], latency[3]);
+				}
 			}
 
 			struct bio* b = malloc(sizeof(struct bio));

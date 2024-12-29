@@ -3,7 +3,10 @@
 #ifndef _FSTORE_H_
 #define _FSTORE_H_
 
+/*
 #include <linux/types.h>
+*/
+#include "kernel-api.h"
 
 #define FSTORE_API_SUCCESS 0
 #define FSTORE_API_FAILURE -1
@@ -24,6 +27,8 @@ typedef struct fstore_uuid_impl_t {
 typedef void* fstore_map_ptr_t;
 typedef u64 fstore_key_type_t;
 typedef u64 fstore_val_type_t;
+
+int fv_init(void);
 
 /*
 This is a control plane operation for anyone wanting to report data, anywhere in the kernel. Reported data is stored using a key-value map.
