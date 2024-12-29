@@ -771,7 +771,7 @@ void submit_bio_noacct(struct bio *bio)
 
 	fstore_insert(bdev->fstore_start_times, (fstore_key_type_t) bio, ktime_get_ns());
 
-	fstore_val_type_t curr_n_reads;
+	fstore_val_type_t curr_n_reads = 0;
 	fstore_query(bdev->fstore_queued_reads, (fstore_key_type_t) q, &curr_n_reads);
 	fstore_insert(bdev->fstore_queued_reads, (fstore_key_type_t) q, curr_n_reads + ((bio_sectors(bio) + 7) / 8));
 
@@ -780,17 +780,18 @@ void submit_bio_noacct(struct bio *bio)
 	might_sleep();
 
 	fstore_key_type_t past_keys[4];
-	fstore_get_past_keys(bdev->fstore_end_times, 4, &past_keys[0]);
-	for (int i = 0; i<4; ++i) {
-		fstore_val_type_t queue_depth, start_time, end_time;
-		fstore_query(bdev->linnos_map_refs[1], past_keys[i], &end_time);
-		fstore_query(bdev->linnos_map_refs[0], past_keys[i], &start_time);
-		fstore_query(bdev->linnos_map_refs[2], past_keys[i], &queue_depth);
+	if (fstore_get_past_keys(bdev->fstore_end_times, 4, &past_keys[0]) == FSTORE_API_SUCCESS) {
+		for (int i = 0; i<4; ++i) {
+			fstore_val_type_t queue_depth, start_time, end_time;
+			fstore_query(bdev->linnos_map_refs[1], past_keys[i], &end_time);
+			fstore_query(bdev->linnos_map_refs[0], past_keys[i], &start_time);
+			fstore_query(bdev->linnos_map_refs[2], past_keys[i], &queue_depth);
+		}
 	}
 	fstore_val_type_t curr_queue_depth;
-	fstore_query(bdev->fstore_queue_ss, (fstore_key_type_t) bio, &curr_queue_depth);
-	
-	printk(KERN_INFO "queue_ss: %ld\n", curr_queue_depth);
+	if (fstore_query(bdev->fstore_queue_ss, (fstore_key_type_t) bio, &curr_queue_depth) == FSTORE_API_SUCCESS) {
+		printk(KERN_INFO "bio: %p:%s queue_ss: %ld\n", bio, dev_name(bdev), curr_queue_depth);
+	}
 
 	/* TODO use the queried values in the model */
 

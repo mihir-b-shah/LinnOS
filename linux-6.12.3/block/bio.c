@@ -1710,7 +1710,7 @@ again:
 	if (bio->bi_bdev != NULL) {
 		fstore_insert(bio->bi_bdev->fstore_end_times, (fstore_key_type_t) bio, ktime_get_ns() / 1000);
 		
-		fstore_val_type_t curr_n_reads;
+		fstore_val_type_t curr_n_reads = 0;
 		fstore_query(bio->bi_bdev->fstore_queued_reads, (fstore_key_type_t) bio->bi_bdev->bd_queue, &curr_n_reads);
 		fstore_insert(bio->bi_bdev->fstore_queued_reads, (fstore_key_type_t) bio->bi_bdev->bd_queue, curr_n_reads - ((bio_sectors(bio) + 7) / 8));
 	}
