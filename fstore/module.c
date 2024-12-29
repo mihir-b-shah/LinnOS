@@ -66,7 +66,7 @@ static u64 hash(fstore_key_type_t x) {
 static void hash_map__init(struct hash_map_t* map, int sz) {
 	int i;
 	map->capacity = sz;
-	map->table = kzalloc(sizeof(struct kv_t) * sz, GFP_KERNEL);
+		map->table = kzalloc(sizeof(struct kv_t) * sz, GFP_KERNEL);
 	for (i = 0; i<sz; ++i) {
 		map->table[i].p = 0;
 		spin_lock_init(&map->table[i].lock);
@@ -78,6 +78,7 @@ static bool hash_map__insert(struct hash_map_t* map, fstore_key_type_t k, fstore
 	struct kv_t* kv;
 
 	kv = &map->table[hash(k) % map->capacity];
+
 	spin_lock(&kv->lock);
 	for (i = 0; i<HASH_TABLE_ASSOC; ++i) {
 		if (kv->k[i] == k) {

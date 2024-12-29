@@ -116,11 +116,11 @@ int main() {
 	fv_init();
 
 	fstore_map_ptr_t start_map;
-	if (fstore_register_map(uuid_start, "bio", offsetof(struct bio, scratch), member_sz(struct bio, scratch), &start_map, 16) != FSTORE_API_SUCCESS) {
+	if (fstore_register_map(uuid_start, "bio", -1 /*offsetof(struct bio, scratch)*/, 0 /*member_sz(struct bio, scratch)*/, &start_map, 16) != FSTORE_API_SUCCESS) {
 		printf("big sad\n");
 	}
 	fstore_map_ptr_t end_map;
-	if (fstore_register_map(uuid_end, "bio", offsetof(struct bio, scratch), member_sz(struct bio, scratch), &end_map, 16) != FSTORE_API_SUCCESS) {
+	if (fstore_register_map(uuid_end, "bio", -1 /*offsetof(struct bio, scratch)*/, 0 /*member_sz(struct bio, scratch)*/, &end_map, 16) != FSTORE_API_SUCCESS) {
 		printf("big sad 2\n");
 	}
 
