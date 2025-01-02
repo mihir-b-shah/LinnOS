@@ -281,7 +281,7 @@ struct bio {
 
 	struct bio_set		*bi_pool;
 
-	char fstore_scratch[24];
+	char fstore_scratch[32];
 
 	/*
 	 * We can inline a number of vecs at the end of the bio, to avoid
