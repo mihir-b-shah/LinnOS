@@ -1,4 +1,5 @@
 
+/*
 #include <linux/module.h>
 #include <linux/spinlock.h>
 #include <linux/mutex.h>
@@ -13,19 +14,14 @@
 #include <linux/fstore.h>
 
 typedef struct mutex mutex;
-/*
+*/
 #include "kernel-api.h"
 #include "module.h"
-*/
 
 #define MAX_N_MAPS 2048
 #define MAX_N_KEYS 256
 #define HASH_TABLE_SIZE 4096
 #define HASH_TABLE_ASSOC 1
-
-static bool is_uuid_empty(const fstore_uuid_t* uuid) {
-	return uuid->strs[0] == NULL;
-}
 
 static bool uuid_eql(const fstore_uuid_t* uuid0, const fstore_uuid_t* uuid1) {
 	int i;
@@ -42,10 +38,17 @@ static bool uuid_eql(const fstore_uuid_t* uuid0, const fstore_uuid_t* uuid1) {
 	return true;
 }
 
+
+struct key_scratch_loc_t {
+	const char* id;
+	int offs;
+	int sz;
+};
 struct key_scratch_info_t {
 	const char* id;
-	int scratch_offs;
-	int scratch_sz;
+	struct key_scratch_loc_t* locs;
+	int base_offs;
+	int base_sz;
 };
 static struct key_scratch_info_t key_infos[MAX_N_KEYS];
 
@@ -66,7 +69,7 @@ static u64 hash(fstore_key_type_t x) {
 static void hash_map__init(struct hash_map_t* map, int sz) {
 	int i;
 	map->capacity = sz;
-		map->table = kzalloc(sizeof(struct kv_t) * sz, GFP_KERNEL);
+	map->table = kzalloc(sizeof(struct kv_t) * sz, GFP_KERNEL);
 	for (i = 0; i<sz; ++i) {
 		map->table[i].p = 0;
 		spin_lock_init(&map->table[i].lock);
@@ -195,7 +198,7 @@ static void fstore_init(void) {
 static void fstore_exit(void) {
 	int i;
 	for (i = 0; i<MAX_N_MAPS; ++i) {
-		if (is_uuid_empty(&maps[i].id)) {
+		if (maps[i].id.strs[0] != NULL) {
 			hash_map__free(&maps[i].map);
 			circ_buf__free(&maps[i].past_keys);
 		}
@@ -208,6 +211,7 @@ static void fstore_exit(void) {
 int fstore_register_map(fstore_uuid_t id, const char* key_id, int scratch_offs, unsigned scratch_sz, fstore_map_ptr_t* map, int n_past_track) {
 	int map_i;
 	int key_i;
+	int loc_i;
 
 	if (!is_pow_2(n_past_track)) {
 		printk(KERN_INFO "register map failed.\n");
@@ -216,7 +220,7 @@ int fstore_register_map(fstore_uuid_t id, const char* key_id, int scratch_offs, 
 	mutex_lock(&fstore_init_mutex);
 
 	map_i = 0;
-	while (map_i < MAX_N_MAPS && !is_uuid_empty(&maps[map_i].id)) {
+	while (map_i < MAX_N_MAPS && maps[map_i].id.strs[0] != NULL) {
 		map_i += 1;
 	}
 	if (map_i >= MAX_N_MAPS) {
@@ -237,17 +241,36 @@ int fstore_register_map(fstore_uuid_t id, const char* key_id, int scratch_offs, 
 
 	if (key_infos[key_i].id == NULL) {
 		key_infos[key_i].id = key_id;
-		key_infos[key_i].scratch_offs = scratch_offs;
-		key_infos[key_i].scratch_sz = scratch_sz;
+		key_infos[key_i].locs = kzalloc(sizeof(struct key_scratch_loc_t) * MAX_N_MAPS, GFP_KERNEL);
+		key_infos[key_i].base_offs = scratch_offs;
+		key_infos[key_i].base_sz = scratch_sz;
+	}
+
+	for (loc_i = 0; loc_i<MAX_N_MAPS; ++loc_i) {
+		if (key_infos[key_i].locs[loc_i].id == NULL) {
+			key_infos[key_i].locs[loc_i].id = id.strs[0];
+			key_infos[key_i].locs[loc_i].offs = key_infos[key_i].base_offs;
+			key_infos[key_i].locs[loc_i].sz = key_infos[key_i].base_sz;
+			break;
+		} else if (strcmp(key_infos[key_i].locs[loc_i].id, id.strs[0]) == 0) {
+			break;
+
+		}
+	}
+	if (loc_i >= MAX_N_MAPS) {
+		mutex_unlock(&fstore_init_mutex);
+		printk(KERN_INFO "register map failed.\n");
+		return FSTORE_API_FAILURE;
 	}
 
 	maps[map_i].id = id;
 
-	if (key_infos[key_i].scratch_sz >= sizeof(fstore_val_type_t)) {
-		maps[map_i].scratch_offs = key_infos[key_i].scratch_offs;
-		key_infos[key_i].scratch_offs += sizeof(fstore_val_type_t);
-		key_infos[key_i].scratch_sz -= sizeof(fstore_val_type_t);
+	if (key_infos[key_i].locs[loc_i].sz >= sizeof(fstore_val_type_t)) {
+		maps[map_i].scratch_offs = key_infos[key_i].locs[loc_i].offs;
+		key_infos[key_i].locs[loc_i].offs += sizeof(fstore_val_type_t);
+		key_infos[key_i].locs[loc_i].sz -= sizeof(fstore_val_type_t);
 	} else {
+		printk(KERN_INFO "falling back to hash table.\n");
 		maps[map_i].scratch_offs = -1;
 		hash_map__init(&maps[map_i].map, HASH_TABLE_SIZE);
 	}
