@@ -265,12 +265,12 @@ int fstore_register_map(fstore_uuid_t id, const char* key_id, int scratch_offs, 
 	maps[map_i].id = id;
 
 	if (key_infos[key_i].locs[loc_i].sz >= sizeof(fstore_val_type_t)) {
-		printk(KERN_INFO "using fast lookup %s:%s:%d:%d:%s:%d:%d.\n", key_id, key_infos[key_i].id, key_infos[key_id].base_offs, key_infos[key_id].base_sz, key_infos[key_i].locs[locs_i].id, key_infos[key_i].locs[locs_i].offs, key_infos[key_i].locs[locs_i].sz);
+		printk(KERN_INFO "using fast lookup %s:%s %s:%s:%d:%d:%s:%d:%d.\n", id.strs[0], id.strs[1], key_id, key_infos[key_i].id, key_infos[key_id].base_offs, key_infos[key_id].base_sz, key_infos[key_i].locs[locs_i].id, key_infos[key_i].locs[locs_i].offs, key_infos[key_i].locs[locs_i].sz);
 		maps[map_i].scratch_offs = key_infos[key_i].locs[loc_i].offs;
 		key_infos[key_i].locs[loc_i].offs += sizeof(fstore_val_type_t);
 		key_infos[key_i].locs[loc_i].sz -= sizeof(fstore_val_type_t);
 	} else {
-		printk(KERN_INFO "fall back to hash table %s:%s:%d:%d:%s:%d:%d.\n", key_id, key_infos[key_i].id, key_infos[key_id].base_offs, key_infos[key_id].base_sz, key_infos[key_i].locs[locs_i].id, key_infos[key_i].locs[locs_i].offs, key_infos[key_i].locs[locs_i].sz);
+		printk(KERN_INFO "fall back to hash table %s:%s %s:%s:%d:%d:%s:%d:%d.\n", id.strs[0], id.strs[1], key_id, key_infos[key_i].id, key_infos[key_id].base_offs, key_infos[key_id].base_sz, key_infos[key_i].locs[locs_i].id, key_infos[key_i].locs[locs_i].offs, key_infos[key_i].locs[locs_i].sz);
 		maps[map_i].scratch_offs = -1;
 		hash_map__init(&maps[map_i].map, HASH_TABLE_SIZE);
 	}
