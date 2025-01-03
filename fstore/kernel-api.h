@@ -49,9 +49,7 @@ static void mutex_unlock(pthread_mutex_t* mutex) {
 
 #define KERN_INFO ""
 
-static void printk(const char* p) {
-	printf("%s", p);
-}
+#define printk printf
 
 #define __init
 #define __exit

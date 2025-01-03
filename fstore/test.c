@@ -106,68 +106,44 @@ int main() {
 	struct bio_pq* pq = malloc(sizeof(struct bio_pq));
 	bio_pq__init(pq, bio_key);
 
-	fstore_uuid_t uuid_start_sda;
-	uuid_start_sda.strs[0] = "sda";
-	uuid_start_sda.strs[1] = "bio__start_time";
-	fstore_uuid_t uuid_end_sda;
-	uuid_end_sda.strs[0] = "sda";
-	uuid_end_sda.strs[1] = "bio__end_time";
-	fstore_uuid_t uuid_start_sdb;
-	uuid_start_sdb.strs[0] = "sdb";
-	uuid_start_sdb.strs[1] = "bio__start_time";
-	fstore_uuid_t uuid_end_sdb;
-	uuid_end_sdb.strs[0] = "sdb";
-	uuid_end_sdb.strs[1] = "bio__end_time";
+	const char* devices[13] = {"sda", "sdb", "sdc", "loop0", "loop1", "loop2", "loop3", "loop4", "loop5", "loop6", "loop7", "loop8", "loop9"};
+	const char* maps[2] = {"bio__start_time", "bio__end_time"};
+
+	fstore_uuid_t uuids[13][2];
+	fstore_map_ptr_t map_ptrs[13][2];
+	for (int i = 0; i<13; ++i) {
+		for (int j = 0; j<2; ++j) {
+			uuids[i][j].strs[0] = devices[i];
+			uuids[i][j].strs[1] = maps[j];
+			if (fstore_register_map(uuids[i][j], "bio", offsetof(struct bio, scratch), member_sz(struct bio, scratch), &map_ptrs[i][j], 16) != FSTORE_API_SUCCESS) {
+				printf("big sad\n");
+			}
+		}
+	}
 
 	fv_init();
-
-	fstore_map_ptr_t start_map_sda;
-	if (fstore_register_map(uuid_start_sda, "bio", offsetof(struct bio, scratch), member_sz(struct bio, scratch), &start_map_sda, 16) != FSTORE_API_SUCCESS) {
-		printf("big sad\n");
-	}
-	fstore_map_ptr_t end_map_sda;
-	if (fstore_register_map(uuid_end_sda, "bio", offsetof(struct bio, scratch), member_sz(struct bio, scratch), &end_map_sda, 16) != FSTORE_API_SUCCESS) {
-		printf("big sad 2\n");
-	}
-	fstore_map_ptr_t start_map_sdb;
-	if (fstore_register_map(uuid_start_sdb, "bio", offsetof(struct bio, scratch), member_sz(struct bio, scratch), &start_map_sdb, 16) != FSTORE_API_SUCCESS) {
-		printf("big sad 3\n");
-	}
-	fstore_map_ptr_t end_map_sdb;
-	if (fstore_register_map(uuid_end_sdb, "bio", offsetof(struct bio, scratch), member_sz(struct bio, scratch), &end_map_sdb, 16) != FSTORE_API_SUCCESS) {
-		printf("big sad 4\n");
-	}
 
 	for (int t = 0; t < 1000; ++t) {
 		struct bio* top;
 		if (bio_pq__cond_pop(pq, &top, t)) {
-			if (t % 2 == 0) {
-				fstore_insert(end_map_sda, (uint64_t) top, (uint64_t) top->finish_time);
-			} else {
-				fstore_insert(end_map_sdb, (uint64_t) top, (uint64_t) top->finish_time);
-			}
+			fstore_insert(map_ptrs[t % 13][1], (uint64_t) top, (uint64_t) top->finish_time);
 		}
 		if (t % 4 == 0) {
-			fstore_key_type_t keys_sda[4];
-			fstore_key_type_t keys_sdb[4];
-			bool r = true;
-			r &= fstore_get_past_keys(end_map_sda, 4, &keys_sda[0]) == FSTORE_API_SUCCESS;
-			r &= fstore_get_past_keys(end_map_sdb, 4, &keys_sdb[0]) == FSTORE_API_SUCCESS;
-			uint64_t latency_sda[4];
-			uint64_t latency_sdb[4];
-			if (r) {
-				for (int i = 0; i<4; ++i) {
-					fstore_val_type_t start_time_sda, end_time_sda, start_time_sdb, end_time_sdb;
-					r &= fstore_query(start_map_sda, keys_sda[i], &start_time_sda) == FSTORE_API_SUCCESS;
-					r &= fstore_query(end_map_sda, keys_sda[i], &end_time_sda) == FSTORE_API_SUCCESS;
-					r &= fstore_query(start_map_sdb, keys_sdb[i], &start_time_sdb) == FSTORE_API_SUCCESS;
-					r &= fstore_query(end_map_sdb, keys_sdb[i], &end_time_sdb) == FSTORE_API_SUCCESS;
-					latency_sda[i] = (int) (end_time_sda - start_time_sda);
-					latency_sdb[i] = (int) (end_time_sdb - start_time_sdb);
-				}
+			for (int j = 0; j<13; ++j) {
+				fstore_key_type_t keys[4];
+				bool r = true;
+				r &= fstore_get_past_keys(map_ptrs[j][1], 4, &keys[0]) == FSTORE_API_SUCCESS;
+				uint64_t latency[4];
 				if (r) {
-					printf("t: %d | past_latency: %lu %lu %lu %lu\n", t, latency_sda[0], latency_sda[1], latency_sda[2], latency_sda[3]);
-					printf("t: %d | past_latency: %lu %lu %lu %lu\n", t, latency_sdb[0], latency_sdb[1], latency_sdb[2], latency_sdb[3]);
+					for (int i = 0; i<4; ++i) {
+						fstore_val_type_t start_time, end_time;
+						r &= fstore_query(map_ptrs[j][0], keys[i], &start_time) == FSTORE_API_SUCCESS;
+						r &= fstore_query(map_ptrs[j][1], keys[i], &end_time) == FSTORE_API_SUCCESS;
+						latency[i] = (int) (end_time - start_time);
+					}
+					if (r) {
+						printf("t: %d | past_latency: %lu %lu %lu %lu\n", t, latency[0], latency[1], latency[2], latency[3]);
+					}
 				}
 			}
 
@@ -178,11 +154,7 @@ int main() {
 			b->finish_time = t + (rand() % 200);
 			bio_pq__push(pq, b);
 			
-			if (t % 8 == 0) {
-				fstore_insert(start_map_sda, (uint64_t) b, (uint64_t) t);
-			} else {
-				fstore_insert(start_map_sdb, (uint64_t) b, (uint64_t) t);
-			}
+			fstore_insert(map_ptrs[(t / 4) % 13][0], (uint64_t) b, (uint64_t) t);
 		}
 	}
 
