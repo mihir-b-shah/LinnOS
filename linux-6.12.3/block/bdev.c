@@ -442,6 +442,35 @@ struct block_device *bdev_alloc(struct gendisk *disk, u8 partno)
 		return NULL;
 	}
 	bdev->bd_disk = disk;
+
+	fstore_uuid_t uuid_start;
+	uuid_start.strs[0] = dev_name(&bdev->bd_device);
+	uuid_start.strs[1] = "__start_times";
+	fstore_register_map(uuid_start, "bio", offsetof(struct bio, fstore_scratch), sizeof(((struct bio*) NULL)->fstore_scratch), &bdev->fstore_start_times, 16);
+
+	fstore_uuid_t uuid_end;
+	uuid_end.strs[0] = dev_name(&bdev->bd_device);
+	uuid_end.strs[1] = "__end_times";
+	fstore_register_map(uuid_end, "bio", offsetof(struct bio, fstore_scratch), sizeof(((struct bio*) NULL)->fstore_scratch), &bdev->fstore_end_times, 16);
+
+	fstore_uuid_t uuid_queued_reads;
+	uuid_queued_reads.strs[0] = dev_name(&bdev->bd_device);
+	uuid_queued_reads.strs[1] = "__queued_reads";
+	fstore_register_map(uuid_queued_reads, "request_queue", offsetof(struct request_queue, fstore_scratch), sizeof(((struct request_queue*) NULL)->fstore_scratch), &bdev->fstore_queued_reads, 16);
+
+	fstore_uuid_t uuid_queue_ss;
+	uuid_queue_ss.strs[0] = dev_name(&bdev->bd_device);
+	uuid_queue_ss.strs[1] = "__queue_ss";
+	fstore_register_map(uuid_queue_ss, "bio", offsetof(struct bio, fstore_scratch), sizeof(((struct bio*) NULL)->fstore_scratch), &bdev->fstore_queue_ss, 16);
+
+	fstore_uuid_t uuid_sectors;
+	uuid_sectors.strs[0] = dev_name(&bdev->bd_device);
+	uuid_sectors.strs[1] = "__sectors";
+	fstore_register_map(uuid_sectors, "bio", offsetof(struct bio, fstore_scratch), sizeof(((struct bio*) NULL)->fstore_scratch), &bdev->fstore_sectors, 16);
+	
+	fstore_uuid_t uuids[] = {uuid_start, uuid_end, uuid_queue_ss, uuid_sectors};	
+	fstore_register_subscriber(4, &uuids[0], &bdev->linnos_map_refs[0]);
+
 	return bdev;
 }
 
@@ -887,34 +916,6 @@ static void bdev_yield_write_access(struct file *bdev_file)
 int bdev_open(struct block_device *bdev, blk_mode_t mode, void *holder,
 	      const struct blk_holder_ops *hops, struct file *bdev_file)
 {
-	fstore_uuid_t uuid_start;
-	uuid_start.strs[0] = dev_name(&bdev->bd_device);
-	uuid_start.strs[1] = "__start_times";
-	fstore_register_map(uuid_start, "bio", offsetof(struct bio, fstore_scratch), sizeof(((struct bio*) NULL)->fstore_scratch), &bdev->fstore_start_times, 16);
-
-	fstore_uuid_t uuid_end;
-	uuid_end.strs[0] = dev_name(&bdev->bd_device);
-	uuid_end.strs[1] = "__end_times";
-	fstore_register_map(uuid_end, "bio", offsetof(struct bio, fstore_scratch), sizeof(((struct bio*) NULL)->fstore_scratch), &bdev->fstore_end_times, 16);
-
-	fstore_uuid_t uuid_queued_reads;
-	uuid_queued_reads.strs[0] = dev_name(&bdev->bd_device);
-	uuid_queued_reads.strs[1] = "__queued_reads";
-	fstore_register_map(uuid_queued_reads, "request_queue", offsetof(struct request_queue, fstore_scratch), sizeof(((struct request_queue*) NULL)->fstore_scratch), &bdev->fstore_queued_reads, 16);
-
-	fstore_uuid_t uuid_queue_ss;
-	uuid_queue_ss.strs[0] = dev_name(&bdev->bd_device);
-	uuid_queue_ss.strs[1] = "__queue_ss";
-	fstore_register_map(uuid_queue_ss, "bio", offsetof(struct bio, fstore_scratch), sizeof(((struct bio*) NULL)->fstore_scratch), &bdev->fstore_queue_ss, 16);
-
-	fstore_uuid_t uuid_sectors;
-	uuid_sectors.strs[0] = dev_name(&bdev->bd_device);
-	uuid_sectors.strs[1] = "__sectors";
-	fstore_register_map(uuid_sectors, "bio", offsetof(struct bio, fstore_scratch), sizeof(((struct bio*) NULL)->fstore_scratch), &bdev->fstore_sectors, 16);
-	
-	fstore_uuid_t uuids[] = {uuid_start, uuid_end, uuid_queue_ss, uuid_sectors};	
-	fstore_register_subscriber(4, &uuids[0], &bdev->linnos_map_refs[0]);
-
 	bool unblock_events = true;
 	struct gendisk *disk = bdev->bd_disk;
 	int ret;
