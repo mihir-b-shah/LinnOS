@@ -1,4 +1,5 @@
 
+/*
 #include <linux/module.h>
 #include <linux/spinlock.h>
 #include <linux/mutex.h>
@@ -13,10 +14,9 @@
 #include <linux/fstore.h>
 
 typedef struct mutex mutex;
-/*
+*/
 #include "kernel-api.h"
 #include "module.h"
-*/
 
 #define MAX_N_MAPS 2048
 #define MAX_N_KEYS 256
@@ -220,13 +220,18 @@ int fstore_register_map(fstore_uuid_t id, const char* key_id, int scratch_offs, 
 	mutex_lock(&fstore_init_mutex);
 
 	map_i = 0;
-	while (map_i < MAX_N_MAPS && maps[map_i].id.strs[0] != NULL) {
+	while (map_i < MAX_N_MAPS && maps[map_i].id.strs[0] != NULL && !uuid_eql(&id, &maps[map_i].id)) {
 		map_i += 1;
 	}
 	if (map_i >= MAX_N_MAPS) {
 		mutex_unlock(&fstore_init_mutex);
 		printk(KERN_INFO "register map failed.\n");
 		return FSTORE_API_FAILURE;
+	}
+	if (maps[map_i].id.strs[0] != NULL) {
+		*map = (fstore_map_ptr_t) &maps[map_i];
+		mutex_unlock(&fstore_init_mutex);
+		return FSTORE_API_SUCCESS;
 	}
 
 	key_i = 0;
