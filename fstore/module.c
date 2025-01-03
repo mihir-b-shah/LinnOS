@@ -312,6 +312,10 @@ int fstore_insert(fstore_map_ptr_t map_p, fstore_key_type_t k, fstore_val_type_t
 	char* p;
 
 	map = (struct map_t*) map_p;
+	if (map == NULL) {
+		return FSTORE_API_FAILURE;
+	}
+
 	if (map->scratch_offs >= 0) {
 		char* scratch_p = ((char*) k) + map->scratch_offs;
 		*((fstore_val_type_t*) scratch_p) = v;
@@ -331,6 +335,10 @@ int fstore_get_past_keys(fstore_map_ptr_t p, int n_past, fstore_key_type_t* keys
 	int i;
 
 	m = (struct map_t*) p;
+	if (m == NULL) {
+		return FSTORE_API_FAILURE;
+	}
+
 	if (n_past > m->past_keys.sz) {
 		return FSTORE_API_FAILURE;
 	}
@@ -346,6 +354,10 @@ int fstore_query(fstore_map_ptr_t p, fstore_key_type_t k, fstore_val_type_t* val
 	struct map_t* m;
 
 	m = (struct map_t*) p;
+	if (m == NULL) {
+		return FSTORE_API_FAILURE;
+	}
+
 	if (m->scratch_offs >= 0) {
 		char* scratch_p = ((char*) k) + m->scratch_offs;
 		*val = *((fstore_val_type_t*) scratch_p);
