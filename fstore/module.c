@@ -1,5 +1,4 @@
 
-/*
 #include <linux/module.h>
 #include <linux/spinlock.h>
 #include <linux/mutex.h>
@@ -14,9 +13,10 @@
 #include <linux/fstore.h>
 
 typedef struct mutex mutex;
-*/
+/*
 #include "kernel-api.h"
 #include "module.h"
+*/
 
 #define MAX_N_MAPS 2048
 #define MAX_N_KEYS 256
