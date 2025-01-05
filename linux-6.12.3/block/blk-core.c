@@ -780,6 +780,7 @@ void submit_bio_noacct(struct bio *bio)
 
 	might_sleep();
 
+	/*
 	fstore_key_type_t past_keys[4];
 	if (fstore_get_past_keys(bdev->fstore_end_times, 4, &past_keys[0]) == FSTORE_API_SUCCESS) {
 		for (int i = 0; i<4; ++i) {
@@ -793,6 +794,7 @@ void submit_bio_noacct(struct bio *bio)
 	if (fstore_query(bdev->fstore_queue_ss, (fstore_key_type_t) bio, &curr_queue_depth) == FSTORE_API_SUCCESS) {
 		//printk(KERN_INFO "bio: %p:%p queue_ss: %ld\n", bio, bdev, curr_queue_depth);
 	}
+	*/
 
 	/* TODO use the queried values in the model */
 
