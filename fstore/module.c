@@ -160,6 +160,11 @@ static bool circ_buf__get(struct circ_buf_t* cbuf, int i, void* fill) {
 
 	spin_lock(&cbuf->lock);
 	idx = (cbuf->p + (cbuf->sz - 1 - i)) % cbuf->sz;
+
+	if (idx < 0 || idx >= cbuf->sz) {
+		printk(KERN_INFO "OOB access in circ_buf.\n");
+	}
+
 	if (!cbuf->entries[idx].valid) {
 		spin_unlock(&cbuf->lock);
 		return false;

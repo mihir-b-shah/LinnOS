@@ -963,7 +963,7 @@ int bdev_open(struct block_device *bdev, blk_mode_t mode, void *holder,
 	fstore_uuid_t uuid_start;
 	uuid_start.strs[0] = dev_name(&bdev->bd_device);
 	uuid_start.strs[1] = "__start_times";
-	fstore_register_map(uuid_start, "bio", -1, 0, /*offsetof(struct bio, fstore_scratch), sizeof(((struct bio*) NULL)->fstore_scratch)*/, &bdev->fstore_start_times, 16);
+	fstore_register_map(uuid_start, "bio", -1, 0, /*offsetof(struct bio, fstore_scratch), sizeof(((struct bio*) NULL)->fstore_scratch),*/ &bdev->fstore_start_times, 16);
 
 	fstore_uuid_t uuid_end;
 	uuid_end.strs[0] = dev_name(&bdev->bd_device);
