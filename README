@@ -1,0 +1,26 @@
+
+How to use this:
+
+---------------------
+Installing the kernel
+---------------------
+
+Checkout an ubuntu 22.04 machine on cloudlab (wasn't able to get it working on centos), and clone
+this repo there. Then, run the following steps,
+
+cd linux-6.12.3/
+./setup.sh (just choose default options, and exit menuconfig dialog box with no changes).
+make -j$(nproc)
+sudo make modules_install
+sudo make install
+sudo reboot
+
+-------------
+Known issues
+-------------
+
+- The ubuntu kernel seems to hang (has soft CPU core stalls, upon rebooting. I think this is an issue
+with installing a newer version kernel, although might be something to do with my changes too?
+
+- Using the fstore scratch_offs currently has issues (still faults in the kernel, etc) for now just
+using hash maps (done by setting scratch_offs=-1, scratch_sz=0 as supplied to the fstore_register_map.
